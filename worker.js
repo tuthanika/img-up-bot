@@ -113,6 +113,13 @@ async function handleRequest(request, env) {
       return new Response('OK', { status: 200 });
     }
 
+    // Kiểm tra xem bot có đang ở chế độ công khai không
+    const isPublicMode = await getBotPublicMode(env);
+    if (!isPublicMode && !isAdmin) {
+      await sendMessage(chatId, `⛔ Bot hiện đang ở chế độ riêng tư, chỉ quản trị viên mới có quyền sử dụng.`, env);
+      return new Response('OK', { status: 200 });
+    }
+
     // Xử lý các lệnh
     if (text && text.startsWith('/')) {
       console.log("Nhận lệnh:", text);
@@ -125,7 +132,72 @@ async function handleRequest(request, env) {
         
         if (!subCommand) {
           // Hiển thị trợ giúp quản trị
-          await sendMessage(chatId, `🔐 *Bảng lệnh quản trị*\n\nCác lệnh quản trị hiện có:\n\n/admin ban [ID người dùng] - Hạn chế người dùng chỉ định\n/admin unban [ID người dùng] - Gỡ bỏ hạn chế người dùng chỉ định\n/admin list - Xem tất cả người dùng bị hạn chế\n/admin users - Xem tất cả người dùng đã từng sử dụng bot\n/admin stats - Xem thống kê sử dụng bot\n/admin broadcast [Tin nhắn] - Gửi thông báo tới tất cả người dùng\n/admin autoclean [Số ngày] - Tự động xóa nội dung từ bao nhiêu ngày trước\n/admin autoclean status - Xem cấu hình dọn dẹp hiện tại`, env);
+          await sendMessage(chatId, `🔐 *Bảng lệnh quản trị*\n\nCác lệnh quản trị hiện có:\n\n/admin ban [ID người dùng] - Hạn chế người dùng chỉ định\n/admin unban [ID người dùng] - Gỡ bỏ hạn chế người dùng chỉ định\n/admin list - Xem tất cả người dùng bị hạn chế\n/admin users - Xem tất cả người dùng đã từng sử dụng bot\n/admin stats - Xem thống kê sử dụng bot\n/admin broadcast [Tin nhắn] - Gửi thông báo tới tất cả người dùng\n/admin autoclean [Số ngày] - Tự động xóa nội dung từ bao nhiêu ngày trước\n/admin autoclean status - Xem cấu hình dọn dẹp hiện tại\n/admin mode - Bật/tắt chế độ bot công khai (Public/Private)\n/admin uploadfolder [đường dẫn] - Đặt thư mục upload lưu trữ mặc định\n/admin uploadfolder reset - Đặt lại thư mục upload mặc định`, env);
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'mode') {
+          let newMode;
+          if (targetId && targetId.toLowerCase() === 'public') {
+            newMode = true;
+          } else if (targetId && targetId.toLowerCase() === 'private') {
+            newMode = false;
+          } else {
+            await sendMessage(chatId, `⚠️ Vui lòng gõ thêm tham số cấu hình: \`/admin mode public\` hoặc \`/admin mode private\``, env);
+            return new Response('OK', { status: 200 });
+          }
+          const savedMode = await updateBotPublicMode(newMode, env);
+          if (!savedMode) {
+            await sendMessage(chatId, `❌ Lỗi: Không thể lưu cấu hình chế độ vào KV Storage. Kiểm tra lại binding STATS_STORAGE trong Cloudflare Dashboard.`, env);
+          } else {
+            // Xác minh lại bằng cách đọc KV ngay sau khi lưu
+            const verifyMode = await getBotPublicMode(env);
+            const modeLabel = newMode ? 'CÔNG KHAI' : 'RIÊNG TƯ';
+            const verifyLabel = verifyMode ? 'CÔNG KHAI' : 'RIÊNG TƯ';
+            if (verifyMode !== newMode) {
+              await sendMessage(chatId, `⚠️ Cảnh báo: Đã ghi vào KV nhưng đọc lại trả về ${verifyLabel} thay vì ${modeLabel}. Có thể KV chưa đồng bộ, thử lại sau vài giây.`, env);
+            } else {
+              await sendMessage(chatId, `✅ Đã chuyển bot sang chế độ ${newMode ? 'CÔNG KHAI (Mọi người đều dùng được)' : 'RIÊNG TƯ (Chỉ admin dùng được)'}\n\n🔍 Đã xác minh: KV Storage hiện lưu chế độ = ${verifyLabel}`, env);
+            }
+          }
+          return new Response('OK', { status: 200 });
+        }
+        
+        if (subCommand === 'uploadfolder') {
+          let folder = text.split(' ').slice(2).join(' ').trim();
+          if (!folder) {
+            const currentFolder = await getUploadFolder(env);
+            await sendMessage(chatId, `📂 Thư mục upload hiện tại: \`${currentFolder}\`\n\nĐể thay đổi, hãy dùng:\n/admin uploadfolder [đường dẫn]\nVí dụ: /admin uploadfolder img/test\n\nDùng /admin uploadfolder reset để đặt lại về thư mục gốc`, env);
+            return new Response('OK', { status: 200 });
+          }
+
+          // Cho phép reset về thư mục gốc
+          if (folder.toLowerCase() === 'reset') {
+            folder = '/';
+          } else {
+            // Loại bỏ dấu '/' ở đầu để API nhận diện đúng đây là đường dẫn tương đối
+            while (folder.startsWith('/')) {
+              folder = folder.substring(1);
+            }
+            if (folder === '') {
+              folder = '/';
+            }
+          }
+          
+          try {
+            await updateUploadFolder(folder, env);
+            // Xác minh bằng cách đọc lại ngay sau khi lưu
+            const verifyFolder = await getUploadFolder(env);
+            if (verifyFolder !== folder) {
+              await sendMessage(chatId, `⚠️ Cảnh báo: Đã ghi vào KV nhưng đọc lại trả về \`${verifyFolder}\` thay vì \`${folder}\`. Có thể KV chưa đồng bộ.`, env);
+            } else {
+              const folderDisplay = folder === '/' ? 'Thư mục gốc (/)' : folder;
+              await sendMessage(chatId, `✅ Đã cập nhật thư mục upload: \`${folderDisplay}\`\n\n🔍 Đã xác minh: KV Storage lưu = \`${verifyFolder}\``, env);
+            }
+          } catch (kvError) {
+            console.error('Lỗi KV khi lưu upload_folder:', kvError);
+            await sendMessage(chatId, `❌ Lỗi KV Storage khi lưu thư mục upload:\n\`${kvError.message || String(kvError)}\`\n\nDebug info:\n- folder value: \`${folder}\`\n- folder type: ${typeof folder}\n- STATS_STORAGE exists: ${!!env.STATS_STORAGE}`, env);
+          }
           return new Response('OK', { status: 200 });
         }
         
@@ -661,6 +733,13 @@ async function handlePhoto(message, chatId, env) {
 
     const uploadUrl = new URL(IMG_BED_URL);
     uploadUrl.searchParams.append('returnFormat', 'full');
+    
+    // Gắn thư mục tải lên nếu có cấu hình
+    const uploadFolder = await getUploadFolder(env);
+    if (uploadFolder && uploadFolder !== '/') {
+      uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+      formData.append('uploadFolder', uploadFolder); // API thường nhận folder từ body
+    }
 
     // Chuẩn bị header yêu cầu, đặt mã xác thực vào header thay vì tham số URL
     const headers = {};
@@ -809,6 +888,13 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       const uploadUrl = new URL(IMG_BED_URL);
       uploadUrl.searchParams.append('returnFormat', 'full');
 
+      // Gắn thư mục tải lên nếu có cấu hình
+      const uploadFolder = await getUploadFolder(env);
+      if (uploadFolder && uploadFolder !== '/') {
+        uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+        formData.append('uploadFolder', uploadFolder);
+      }
+
       if (AUTH_CODE) { // Kiểm tra AUTH_CODE lấy từ env
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
       }
@@ -947,6 +1033,13 @@ async function handleAudio(message, chatId, isDocument = false, env) {
 
       const uploadUrl = new URL(IMG_BED_URL);
       uploadUrl.searchParams.append('returnFormat', 'full');
+
+      // Gắn thư mục tải lên nếu có cấu hình
+      const uploadFolder = await getUploadFolder(env);
+      if (uploadFolder && uploadFolder !== '/') {
+        uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+        formData.append('uploadFolder', uploadFolder);
+      }
 
       if (AUTH_CODE) {
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
@@ -1100,6 +1193,13 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
 
       const uploadUrl = new URL(IMG_BED_URL);
       uploadUrl.searchParams.append('returnFormat', 'full');
+
+      // Gắn thư mục tải lên nếu có cấu hình
+      const uploadFolder = await getUploadFolder(env);
+      if (uploadFolder && uploadFolder !== '/') {
+        uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+        formData.append('uploadFolder', uploadFolder);
+      }
 
       if (AUTH_CODE) {
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
@@ -1282,6 +1382,13 @@ async function handleDocument(message, chatId, env) {
 
       const uploadUrl = new URL(IMG_BED_URL);
       uploadUrl.searchParams.append('returnFormat', 'full');
+
+      // Gắn thư mục tải lên nếu có cấu hình
+      const uploadFolder = await getUploadFolder(env);
+      if (uploadFolder && uploadFolder !== '/') {
+        uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+        formData.append('uploadFolder', uploadFolder);
+      }
 
       if (AUTH_CODE) {
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
@@ -2305,6 +2412,65 @@ function getFileTypeIcon(fileType) {
   }
 }
 
+// Quản lý chế độ bot công khai
+async function getBotPublicMode(env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      console.error('STATS_STORAGE chưa được bind! Mặc định ở chế độ RIÊNG TƯ.');
+      return false; // Fail-safe: không có KV → private để an toàn
+    }
+    const mode = await env.STATS_STORAGE.get('public_mode');
+    if (mode === null) return true; // KV hoạt động nhưng chưa từng set → mặc định public
+    return mode === 'true';
+  } catch (error) {
+    console.error('Lỗi khi lấy chế độ bot:', error);
+    return false; // Lỗi → fail-safe về private
+  }
+}
+
+async function updateBotPublicMode(mode, env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      console.error('STATS_STORAGE chưa được bind! Không thể lưu chế độ bot.');
+      return false;
+    }
+    await env.STATS_STORAGE.put('public_mode', mode.toString());
+    console.log(`Đã lưu chế độ bot vào KV: public_mode = ${mode}`);
+    return true;
+  } catch (error) {
+    console.error('Lỗi khi cập nhật chế độ bot:', error);
+    return false;
+  }
+}
+
+// Quản lý thư mục tải lên
+async function getUploadFolder(env) {
+  try {
+    if (!env.STATS_STORAGE) {
+      console.error('STATS_STORAGE chưa được bind! Dùng thư mục gốc.');
+      return '/';
+    }
+    const folder = await env.STATS_STORAGE.get('upload_folder');
+    return folder || '/'; // Mặc định là thư mục gốc
+  } catch (error) {
+    console.error('Lỗi khi lấy thư mục tải lên:', error);
+    return '/';
+  }
+}
+
+async function updateUploadFolder(folder, env) {
+  if (!env.STATS_STORAGE) {
+    throw new Error('STATS_STORAGE chưa được bind trong Cloudflare Dashboard');
+  }
+  // Kiểm tra folder hợp lệ
+  if (folder === undefined || folder === null) {
+    throw new Error('Giá trị folder không hợp lệ: ' + String(folder));
+  }
+  await env.STATS_STORAGE.put('upload_folder', String(folder));
+  console.log(`Đã lưu thư mục upload vào KV: upload_folder = ${folder}`);
+  return true;
+}
+
 // Kiểm tra xem người dùng có bị cấm không
 async function isUserBanned(userId, env) {
   try {
@@ -3035,6 +3201,13 @@ async function mergeAndUploadChunks(chatId, userId, env) {
       
       const uploadUrl = new URL(env.IMG_BED_URL);
       uploadUrl.searchParams.append('returnFormat', 'full');
+
+      // Gắn thư mục tải lên nếu có cấu hình
+      const uploadFolder = await getUploadFolder(env);
+      if (uploadFolder && uploadFolder !== '/') {
+        uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+        formData.append('uploadFolder', uploadFolder);
+      }
       
       if (env.AUTH_CODE) {
         uploadUrl.searchParams.append('authCode', env.AUTH_CODE);
