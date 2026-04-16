@@ -1,8 +1,8 @@
 export default {
   async fetch(request, env, ctx) {
-    console.log("收到请求：", request.method, request.url);
+    console.log("Nhận yêu cầu:", request.method, request.url);
     
-    // 特殊路径处理：设置Webhook
+    // Xử lý đường dẫn đặc biệt: Thiết lập Webhook
     const url = new URL(request.url);
     if (url.pathname === '/setup-webhook') {
       return handleSetupWebhook(request, env);
@@ -11,28 +11,28 @@ export default {
     try {
       return handleRequest(request, env);
     } catch (error) {
-      console.error("主函数出错：", error);
-      return new Response('处理请求时出错', { status: 500 });
+      console.error("Lỗi ở hàm chính:", error);
+      return new Response('Đã xảy ra lỗi khi xử lý yêu cầu', { status: 500 });
     }
   }
 };
 
-// Webhook设置处理函数
+// Hàm xử lý thiết lập Webhook
 async function handleSetupWebhook(request, env) {
   if (request.method !== 'GET') {
-    return new Response('只接受GET请求', { status: 405 });
+    return new Response('Chỉ chấp nhận yêu cầu GET', { status: 405 });
   }
   
   const BOT_TOKEN = env.BOT_TOKEN;
   
   if (!BOT_TOKEN) {
-    return new Response('BOT_TOKEN 未配置', { status: 500 });
+    return new Response('BOT_TOKEN chưa được cấu hình', { status: 500 });
   }
   
   const url = new URL(request.url);
   const workerUrl = `${url.protocol}//${url.hostname}`;
   
-  console.log(`设置Webhook，Worker URL: ${workerUrl}`);
+  console.log(`Đang thiết lập Webhook, URL của Worker: ${workerUrl}`);
   
   try {
     const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -48,107 +48,107 @@ async function handleSetupWebhook(request, env) {
     });
     
     const result = await response.json();
-    console.log('Webhook设置结果:', result);
+    console.log('Kết quả thiết lập Webhook:', result);
     
     if (result.ok) {
-      return new Response(`Webhook设置成功: ${workerUrl}`, { status: 200 });
+      return new Response(`Thiết lập Webhook thành công: ${workerUrl}`, { status: 200 });
     } else {
-      return new Response(`Webhook设置失败: ${JSON.stringify(result)}`, { status: 500 });
+      return new Response(`Thiết lập Webhook thất bại: ${JSON.stringify(result)}`, { status: 500 });
     }
   } catch (error) {
-    console.error('设置Webhook时出错:', error);
-    return new Response(`设置Webhook时出错: ${error.message}`, { status: 500 });
+    console.error('Lỗi khi thiết lập Webhook:', error);
+    return new Response(`Lỗi khi thiết lập Webhook: ${error.message}`, { status: 500 });
   }
 }
 
-// 主要处理逻辑函数，现在接收 env 对象作为参数
+// Hàm xử lý logic chính, hiện nhận đối tượng env làm tham số
 async function handleRequest(request, env) {
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
-  const AUTH_CODE = env.AUTH_CODE; // 可选的认证代码
-  const ADMIN_USERS = env.ADMIN_USERS ? env.ADMIN_USERS.split(',').map(id => id.trim()) : []; // 管理员用户ID列表
+  const AUTH_CODE = env.AUTH_CODE; // Mã xác thực tùy chọn
+  const ADMIN_USERS = env.ADMIN_USERS ? env.ADMIN_USERS.split(',').map(id => id.trim()) : []; // Danh sách ID người dùng quản trị viên
 
-  // 检查必要的环境变量是否存在
+  // Kiểm tra xem các biến môi trường cần thiết có tồn tại không
   if (!IMG_BED_URL || !BOT_TOKEN) {
-    console.error("环境变量缺失: IMG_BED_URL=", !!IMG_BED_URL, "BOT_TOKEN=", !!BOT_TOKEN);
-    return new Response('必要的环境变量 (IMG_BED_URL, BOT_TOKEN) 未配置', { status: 500 });
+    console.error("Thiếu biến môi trường: IMG_BED_URL=", !!IMG_BED_URL, "BOT_TOKEN=", !!BOT_TOKEN);
+    return new Response('Các biến môi trường cần thiết (IMG_BED_URL, BOT_TOKEN) chưa được cấu hình', { status: 500 });
   }
   
-  // 检查并执行自动清理（放在处理请求的开始，避免频繁清理）
+  // Kiểm tra và thực hiện tự động dọn dẹp (đặt ở đầu quá trình xử lý yêu cầu để tránh dọn dẹp thường xuyên)
   try {
     await checkAndExecuteAutoClean(env);
   } catch (error) {
-    console.error("执行自动清理检查时出错:", error);
+    console.error("Đã xảy ra lỗi khi kiểm tra tự động dọn dẹp:", error);
   }
 
-  console.log("环境变量检查通过: IMG_BED_URL=", IMG_BED_URL.substring(0, 8) + '...', "AUTH_CODE=", AUTH_CODE ? '[已设置]' : '[未设置]');
+  console.log("Kiểm tra biến môi trường thành công: IMG_BED_URL=", IMG_BED_URL.substring(0, 8) + '...', "AUTH_CODE=", AUTH_CODE ? '[Đã thiết lập]' : '[Chưa thiết lập]');
 
-  // API_URL 现在在需要时基于 BOT_TOKEN 构建
+  // API_URL hiện được xây dựng dựa trên BOT_TOKEN khi cần thiết
   const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
   if (request.method !== 'POST') {
-    console.log("非POST请求被拒绝");
-    return new Response('只接受POST请求', { status: 405 });
+    console.log("Yêu cầu không phải POST bị từ chối");
+    return new Response('Chỉ chấp nhận yêu cầu POST', { status: 405 });
   }
 
   try {
     const update = await request.json();
-    console.log("收到Telegram更新，消息类型:", update.message ? Object.keys(update.message).filter(k => ['text', 'photo', 'video', 'document', 'audio', 'animation'].includes(k)).join(',') : 'no message');
+    console.log("Nhận cập nhật từ Telegram, loại tin nhắn:", update.message ? Object.keys(update.message).filter(k => ['text', 'photo', 'video', 'document', 'audio', 'animation'].includes(k)).join(',') : 'no message');
     
     if (!update.message) return new Response('OK', { status: 200 });
 
     const message = update.message;
     const chatId = message.chat.id;
-    const userId = message.from.id; // 获取用户ID
-    const username = message.from.username || '未知用户';
+    const userId = message.from.id; // Lấy ID người dùng
+    const username = message.from.username || 'Người dùng ẩn danh';
     const text = message.text?.trim();
     
-    // 检查用户是否被禁止使用机器人
+    // Kiểm tra xem người dùng có bị chặn sử dụng bot không
     const isBanned = await isUserBanned(userId, env);
     const isAdmin = ADMIN_USERS.includes(userId.toString());
     
-    // 如果用户被禁止且不是管理员，则拒绝处理请求
+    // Nếu người dùng bị chặn và không phải là quản trị viên, từ chối xử lý yêu cầu
     if (isBanned && !isAdmin) {
-      await sendMessage(chatId, `⛔ 很抱歉，您已被管理员限制使用本机器人。如需解除限制，请联系管理员。`, env);
+      await sendMessage(chatId, `⛔ Rất tiếc, bạn đã bị quản trị viên hạn chế sử dụng bot này. Để xóa bỏ hạn chế, vui lòng liên hệ với quản trị viên.`, env);
       return new Response('OK', { status: 200 });
     }
 
-    // 处理命令
+    // Xử lý các lệnh
     if (text && text.startsWith('/')) {
-      console.log("收到命令:", text);
+      console.log("Nhận lệnh:", text);
       const command = text.split(' ')[0];
       
-      // 管理员命令
+      // Lệnh quản trị
       if (command === '/admin' && isAdmin) {
         const subCommand = text.split(' ')[1]?.toLowerCase();
         const targetId = text.split(' ')[2];
         
         if (!subCommand) {
-          // 显示管理员帮助
-          await sendMessage(chatId, `🔐 *管理员命令面板*\n\n以下是可用的管理员命令：\n\n/admin ban [用户ID] - 限制指定用户使用机器人\n/admin unban [用户ID] - 解除对指定用户的限制\n/admin list - 查看所有被限制的用户\n/admin users - 查看所有使用过机器人的用户\n/admin stats - 查看机器人使用统计\n/admin broadcast [消息] - 向所有用户广播消息\n/admin autoclean [天数] - 设置自动删除多少天前的内容\n/admin autoclean status - 查看当前自动清理设置`, env);
+          // Hiển thị trợ giúp quản trị
+          await sendMessage(chatId, `🔐 *Bảng lệnh quản trị*\n\nCác lệnh quản trị hiện có:\n\n/admin ban [ID người dùng] - Hạn chế người dùng chỉ định\n/admin unban [ID người dùng] - Gỡ bỏ hạn chế người dùng chỉ định\n/admin list - Xem tất cả người dùng bị hạn chế\n/admin users - Xem tất cả người dùng đã từng sử dụng bot\n/admin stats - Xem thống kê sử dụng bot\n/admin broadcast [Tin nhắn] - Gửi thông báo tới tất cả người dùng\n/admin autoclean [Số ngày] - Tự động xóa nội dung từ bao nhiêu ngày trước\n/admin autoclean status - Xem cấu hình dọn dẹp hiện tại`, env);
           return new Response('OK', { status: 200 });
         }
         
         if (subCommand === 'ban' && targetId) {
           await banUser(targetId, username, env);
-          await sendMessage(chatId, `✅ 已限制用户 ${targetId} 使用机器人`, env);
+          await sendMessage(chatId, `✅ Đã hạn chế người dùng ${targetId} sử dụng bot`, env);
           return new Response('OK', { status: 200 });
         }
         
         if (subCommand === 'unban' && targetId) {
           await unbanUser(targetId, env);
-          await sendMessage(chatId, `✅ 已解除对用户 ${targetId} 的限制`, env);
+          await sendMessage(chatId, `✅ Đã gỡ bỏ hạn chế đối với người dùng ${targetId}`, env);
           return new Response('OK', { status: 200 });
         }
         
         if (subCommand === 'list') {
           const bannedUsers = await getBannedUsers(env);
           if (bannedUsers.length === 0) {
-            await sendMessage(chatId, `📋 当前没有被限制的用户`, env);
+            await sendMessage(chatId, `📋 Hiện không có người dùng nào bị hạn chế`, env);
           } else {
-            let message = `📋 *被限制的用户列表*\n\n`;
+            let message = `📋 *Danh sách người dùng bị hạn chế*\n\n`;
             bannedUsers.forEach((user, index) => {
-              message += `${index + 1}. 用户ID: ${user.userId}\n   封禁原因: ${user.reason || '未指定'}\n   封禁时间: ${formatDate(user.bannedAt)}\n   操作管理员: ${user.bannedBy || '未知'}\n\n`;
+              message += `${index + 1}. ID người dùng: ${user.userId}\n   Lý do: ${user.reason || 'Không rõ'}\n   Thời gian chặn: ${formatDate(user.bannedAt)}\n   Admin thực hiện: ${user.bannedBy || 'Không rõ'}\n\n`;
             });
             await sendMessage(chatId, message, env);
           }
@@ -156,24 +156,24 @@ async function handleRequest(request, env) {
         }
         
         if (subCommand === 'users') {
-          // 获取所有用户详细信息
+          // Lấy thông tin chi tiết của tất cả người dùng
           const usersList = await getAllUsersDetails(env);
           
           if (usersList.length === 0) {
-            await sendMessage(chatId, `📋 目前没有用户使用过机器人`, env);
+            await sendMessage(chatId, `📋 Hiện chưa có người dùng nào sử dụng bot`, env);
           } else {
-            let message = `👥 *用户列表* (共${usersList.length}人)\n\n`;
+            let message = `👥 *Danh sách người dùng* (Tổng cộng ${usersList.length} người)\n\n`;
             
-            // 添加分页功能
+            // Thêm chức năng phân trang
             const page = parseInt(targetId) || 1;
             const itemsPerPage = 10;
             const totalPages = Math.ceil(usersList.length / itemsPerPage);
             const startIndex = (page - 1) * itemsPerPage;
             const endIndex = Math.min(startIndex + itemsPerPage, usersList.length);
             
-            message += `📄 当前页码: ${page}/${totalPages}\n\n`;
+            message += `📄 Trang hiện tại: ${page}/${totalPages}\n\n`;
             
-            // 只显示当前页的用户
+            // Chỉ hiển thị người dùng của trang hiện tại
             const pageUsers = usersList.slice(startIndex, endIndex);
             
             for (let i = 0; i < pageUsers.length; i++) {
@@ -181,26 +181,26 @@ async function handleRequest(request, env) {
               const userNumber = startIndex + i + 1;
               const isBanned = await isUserBanned(user.userId, env);
               
-              message += `${userNumber}. 用户ID: ${user.userId}\n`;
-              message += `   用户名: ${user.username || '未知'}\n`;
-              message += `   首次使用: ${formatDate(user.firstSeen)}\n`;
-              message += `   最后使用: ${formatDate(user.lastSeen)}\n`;
+              message += `${userNumber}. ID người dùng: ${user.userId}\n`;
+              message += `   Tên người dùng: ${user.username || 'Không rõ'}\n`;
+              message += `   Sử dụng lần đầu: ${formatDate(user.firstSeen)}\n`;
+              message += `   Sử dụng lần cuối: ${formatDate(user.lastSeen)}\n`;
               
-              // 获取该用户的上传统计
+              // Lấy thống kê tải lên của người dùng đó
               const userStats = await getUserStats(user.userId, env);
-              message += `   上传文件: ${userStats.totalUploads || 0} 个\n`;
-              message += `   存储空间: ${formatFileSize(userStats.totalSize || 0)}\n`;
-              message += `   状态: ${isBanned ? '⛔已限制' : '✅正常'}\n\n`;
+              message += `   Số tệp tải lên: ${userStats.totalUploads || 0} tệp\n`;
+              message += `   Dung lượng: ${formatFileSize(userStats.totalSize || 0)}\n`;
+              message += `   Trạng thái: ${isBanned ? '⛔ Đã hạn chế' : '✅ Bình thường'}\n\n`;
             }
             
-            // 添加翻页指引
+            // Thêm hướng dẫn chuyển trang
             if (totalPages > 1) {
-              message += `\n翻页指令:\n`;
+              message += `\nLệnh chuyển trang:\n`;
               if (page > 1) {
-                message += `/admin users ${page - 1} - 上一页\n`;
+                message += `/admin users ${page - 1} - Trang trước\n`;
               }
               if (page < totalPages) {
-                message += `/admin users ${page + 1} - 下一页\n`;
+                message += `/admin users ${page + 1} - Trang sau\n`;
               }
             }
             
@@ -210,91 +210,91 @@ async function handleRequest(request, env) {
         }
         
         if (subCommand === 'stats') {
-          // 获取机器人使用统计
+          // Lấy thống kê sử dụng bot
           const stats = await getBotStats(env);
-          let message = `📊 *机器人使用统计*\n\n`;
-          message += `👥 总用户数: ${stats.totalUsers || 0}\n`;
-          message += `📤 总上传文件数: ${stats.totalUploads || 0}\n`;
-          message += `📦 总上传大小: ${formatFileSize(stats.totalSize || 0)}\n`;
-          message += `⛔ 被限制用户数: ${stats.bannedUsers || 0}\n`;
+          let message = `📊 *Thống kê sử dụng bot*\n\n`;
+          message += `👥 Tổng số người dùng: ${stats.totalUsers || 0}\n`;
+          message += `📤 Tổng số tệp tải lên: ${stats.totalUploads || 0}\n`;
+          message += `📦 Tổng dung lượng: ${formatFileSize(stats.totalSize || 0)}\n`;
+          message += `⛔ Số người dùng bị hạn chế: ${stats.bannedUsers || 0}\n`;
           await sendMessage(chatId, message, env);
           return new Response('OK', { status: 200 });
         }
         
         if (subCommand === 'broadcast' && text.split(' ').slice(2).join(' ')) {
           const broadcastMessage = text.split(' ').slice(2).join(' ');
-          // 获取所有用户并发送广播
+          // Lấy tất cả người dùng và gửi thông báo
           const users = await getAllUsers(env);
           
-          await sendMessage(chatId, `🔄 正在向 ${users.length} 个用户发送广播消息...`, env);
+          await sendMessage(chatId, `🔄 Đang gửi thông báo tới ${users.length} người dùng...`, env);
           
           let successCount = 0;
           for (const user of users) {
             try {
-              await sendMessage(user, `📢 *管理员广播*\n\n${broadcastMessage}`, env);
+              await sendMessage(user, `📢 *THÔNG BÁO TỪ QUẢN TRỊ VIÊN*\n\n${broadcastMessage}`, env);
               successCount++;
             } catch (error) {
-              console.error(`向用户 ${user} 发送广播失败:`, error);
+              console.error(`Gửi thông báo tới người dùng ${user} thất bại:`, error);
             }
           }
           
-          await sendMessage(chatId, `✅ 广播完成！成功发送给 ${successCount}/${users.length} 个用户`, env);
+          await sendMessage(chatId, `✅ Hoàn tất! Gửi thành công cho ${successCount}/${users.length} người dùng`, env);
           return new Response('OK', { status: 200 });
         }
         
         if (subCommand === 'autoclean') {
-          // 获取第三个参数作为天数或命令
+          // Lấy tham số thứ ba là số ngày hoặc lệnh
           const daysOrCommand = text.split(' ')[2];
           
           if (!daysOrCommand) {
-            await sendMessage(chatId, `❌ 请指定要自动删除的天数，例如：\n/admin autoclean 30\n\n或者查看当前设置：\n/admin autoclean status`, env);
+            await sendMessage(chatId, `❌ Vui lòng chỉ định số ngày để tự động xóa, ví dụ:\n/admin autoclean 30\n\nHoặc xem cấu hình hiện tại:\n/admin autoclean status`, env);
             return new Response('OK', { status: 200 });
           }
           
           if (daysOrCommand.toLowerCase() === 'status') {
-            // 查看当前自动清理设置
+            // Xem cấu hình tự động dọn dẹp hiện tại
             const settings = await getAutoCleanSettings(env);
             if (settings && settings.enabled) {
-              await sendMessage(chatId, `⚙️ *自动清理设置*\n\n✅ 状态：已启用\n⏰ 删除时间：${settings.days} 天前的内容\n🕒 设置时间：${formatDate(settings.updatedAt)}\n\n要修改设置，请使用：\n/admin autoclean [天数]\n\n要禁用自动清理，请使用：\n/admin autoclean 0`, env);
+              await sendMessage(chatId, `⚙️ *Cấu hình tự động dọn dẹp*\n\n✅ Trạng thái: Đang bật\n⏰ Thời gian: Xóa nội dung hơn ${settings.days} ngày tuổi\n🕒 Cập nhật lúc: ${formatDate(settings.updatedAt)}\n\nĐể thay đổi cấu hình, sử dụng:\n/admin autoclean [Số ngày]\n\nĐể tắt tự động dọn dẹp, sử dụng:\n/admin autoclean 0`, env);
             } else {
-              await sendMessage(chatId, `⚙️ *自动清理设置*\n\n❌ 状态：未启用\n\n要启用自动清理，请使用：\n/admin autoclean [天数]`, env);
+              await sendMessage(chatId, `⚙️ *Cấu hình tự động dọn dẹp*\n\n❌ Trạng thái: Đang tắt\n\nĐể bật tính năng, sử dụng:\n/admin autoclean [Số ngày]`, env);
             }
             return new Response('OK', { status: 200 });
           }
           
-          // 解析天数
+          // Phân tích số ngày
           const days = parseInt(daysOrCommand);
           if (isNaN(days) || days < 0) {
-            await sendMessage(chatId, `❌ 天数必须是大于或等于0的整数。0表示禁用自动清理。`, env);
+            await sendMessage(chatId, `❌ Số ngày phải là số nguyên lớn hơn hoặc bằng 0. 0 nghĩa là tắt tự động dọn dẹp.`, env);
             return new Response('OK', { status: 200 });
           }
           
-          // 更新自动清理设置
+          // Cập nhật cấu hình tự động dọn dẹp
           if (days === 0) {
-            // 禁用自动清理
+            // Tắt tự động dọn dẹp
             await updateAutoCleanSettings({ enabled: false }, env);
-            await sendMessage(chatId, `✅ 已禁用自动清理功能。`, env);
+            await sendMessage(chatId, `✅ Đã tắt tính năng tự động dọn dẹp.`, env);
           } else {
-            // 启用自动清理
+            // Bật tự động dọn dẹp
             await updateAutoCleanSettings({ enabled: true, days: days }, env);
-            await sendMessage(chatId, `✅ 已设置自动清理 ${days} 天前的内容。\n\n系统将在每次请求时检查并清理符合条件的记录。`, env);
+            await sendMessage(chatId, `✅ Đã thiết lập tự động dọn dẹp nội dung hơn ${days} ngày tuổi.\n\nHệ thống sẽ kiểm tra và dọn dẹp các bản ghi phù hợp trong mỗi lần nhận yêu cầu.`, env);
             
-            // 执行一次立即清理
+            // Thực hiện dọn dẹp ngay lập tức một lần
             const cleanedCount = await cleanOldRecords(days, env);
-            await sendMessage(chatId, `🧹 已立即清理了 ${cleanedCount} 条符合条件的记录。`, env);
+            await sendMessage(chatId, `🧹 Đã dọn dẹp ngay lập tức ${cleanedCount} bản ghi phù hợp.`, env);
           }
           
           return new Response('OK', { status: 200 });
         }
       }
       
-      // 添加分片上传命令
+      // Thêm lệnh tải lên phân đoạn
       if (command === '/chunk_upload' || command === '/chunk' || command === '/chunk_start') {
         await handleChunkUploadStart(chatId, userId, message, env);
         return new Response('OK', { status: 200 });
       }
       
-      // 处理取消分片上传命令
+      // Xử lý lệnh hủy tải lên phân đoạn
       if (command === '/chunk_cancel') {
         await handleChunkUploadCancel(chatId, userId, env);
         return new Response('OK', { status: 200 });
@@ -302,67 +302,67 @@ async function handleRequest(request, env) {
       
       if (command === '/start') {
         try {
-          console.log("开始处理/start命令");
-          const result = await sendMessage(chatId, '🤖 机器人已启用！\n\n直接发送文件即可自动上传，支持图片、视频、音频、文档等400多种格式。发送文件时添加文字描述可作为文件备注，方便后续查找。支持最大20Mb的文件上传(Telegram Bot自身限制)。\n\n需要上传大文件？试试 /chunk_upload 命令启动分片上传！', env);
-          console.log("/start命令响应:", JSON.stringify(result).substring(0, 200));
+          console.log("Bắt đầu xử lý lệnh /start");
+          const result = await sendMessage(chatId, '🤖 Bot đã được kích hoạt!\n\nBạn chỉ cần gửi tệp để tự động tải lên, hỗ trợ hơn 400 định dạng như hình ảnh, video, âm thanh, tài liệu. Thêm mô tả văn bản khi gửi tệp để làm ghi chú, giúp bạn dễ dàng tìm kiếm sau này. Hỗ trợ tải lên tệp tối đa 20MB (giới hạn của Telegram Bot).\n\nCần tải lên tệp lớn? Hãy thử lệnh /chunk_upload để bắt đầu tải lên phân đoạn!', env);
+          console.log("Phản hồi lệnh /start:", JSON.stringify(result).substring(0, 200));
           
-          // 记录用户使用，更新用户列表
+          // Ghi lại việc sử dụng của người dùng, cập nhật danh sách người dùng
           await addUserToList(userId, username, env);
         } catch (error) {
-          console.error("发送/start消息失败:", error);
+          console.error("Gửi tin nhắn /start thất bại:", error);
         }
       } else if (command === '/help') {
         try {
-          console.log("开始处理/help命令");
-          const result = await sendMessage(chatId, '📖 使用说明：\n\n1. 发送 /start 启动机器人（仅首次需要）。\n2. 直接发送图片、视频、音频、文档或其他文件，机器人会自动处理上传。\n3. 发送图片视频文件时填入文字描述可作为文件备注，方便后续查找。\n4. 支持最大20Mb的文件上传（受Telegram Bot限制）。\n5. 支持400多种文件格式，包括常见的图片、视频、音频、文档、压缩包、可执行文件等。\n6. 使用 /formats 命令查看支持的文件格式类别。\n7. 使用 /analytics 命令查看所有统计分析（支持多种参数）。\n8. 使用 /history 命令查看您的上传历史记录。\n9. 使用 /chunk_upload 命令启动分片上传模式，突破20MB限制。\n10. 此机器人由 @uki0x 开发', env);
-          console.log("/help命令响应:", JSON.stringify(result).substring(0, 200));
+          console.log("Bắt đầu xử lý lệnh /help");
+          const result = await sendMessage(chatId, '📖 Hướng dẫn sử dụng:\n\n1. Gửi /start để kích hoạt bot (chỉ cần thực hiện lần đầu).\n2. Gửi trực tiếp hình ảnh, video, âm thanh, tài liệu hoặc các tệp khác, bot sẽ tự động xử lý tải lên.\n3. Thêm mô tả văn bản khi gửi tệp để làm ghi chú cho tệp, giúp tìm kiếm sau này thuận tiện hơn.\n4. Hỗ trợ tải lên tệp tối đa 20MB (giới hạn bởi Telegram Bot).\n5. Hỗ trợ hơn 400 định dạng tệp, bao gồm hình ảnh, video, âm thanh, tài liệu, tệp nén, tệp thực thi phổ biến, v.v.\n6. Sử dụng lệnh /formats để xem danh sách các loại định dạng tệp được hỗ trợ.\n7. Sử dụng lệnh /analytics để xem tất cả các phân tích thống kê (hỗ trợ nhiều tham số).\n8. Sử dụng lệnh /history để xem lịch sử tải lên của bạn.\n9. Sử dụng lệnh /chunk_upload để bắt đầu chế độ tải lên phân đoạn, vượt qua giới hạn 20MB.\n10. Bot này được phát triển bởi @uki0x', env);
+          console.log("Phản hồi lệnh /help:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
-          console.error("发送/help消息失败:", error);
+          console.error("Gửi tin nhắn /help thất bại:", error);
         }
       } else if (command === '/formats') {
         try {
-          console.log("开始处理/formats命令");
-          const formatsMessage = `📋 支持的文件格式类别：\n\n` +
-            `🖼️ 图像：jpg, png, gif, webp, svg, bmp, tiff, heic, raw...\n` +
-            `🎬 视频：mp4, avi, mov, mkv, webm, flv, rmvb, m4v...\n` +
-            `🎵 音频：mp3, wav, ogg, flac, aac, m4a, wma, opus...\n` +
-            `📝 文档：pdf, doc(x), xls(x), ppt(x), txt, md, epub...\n` +
-            `🗜️ 压缩：zip, rar, 7z, tar, gz, xz, bz2...\n` +
-            `⚙️ 可执行：exe, msi, apk, ipa, deb, rpm, dmg...\n` +
-            `🌐 网页/代码：html, css, js, ts, py, java, php, go...\n` +
-            `🎨 3D/设计：obj, fbx, blend, stl, psd, ai, sketch...\n` +
-            `📊 数据/科学：mat, hdf5, parquet, csv, json, xml...\n\n` +
-            `总计支持超过400种文件格式！`;
+          console.log("Bắt đầu xử lý lệnh /formats");
+          const formatsMessage = `📋 Các loại định dạng tệp được hỗ trợ:\n\n` +
+            `🖼️ Hình ảnh: jpg, png, gif, webp, svg, bmp, tiff, heic, raw...\n` +
+            `🎬 Video: mp4, avi, mov, mkv, webm, flv, rmvb, m4v...\n` +
+            `🎵 Âm thanh: mp3, wav, ogg, flac, aac, m4a, wma, opus...\n` +
+            `📝 Tài liệu: pdf, doc(x), xls(x), ppt(x), txt, md, epub...\n` +
+            `🗜️ Nén: zip, rar, 7z, tar, gz, xz, bz2...\n` +
+            `⚙️ Thực thi: exe, msi, apk, ipa, deb, rpm, dmg...\n` +
+            `🌐 Web/Code: html, css, js, ts, py, java, php, go...\n` +
+            `🎨 3D/Thiết kế: obj, fbx, blend, stl, psd, ai, sketch...\n` +
+            `📊 Dữ liệu/Khoa học: mat, hdf5, parquet, csv, json, xml...\n\n` +
+            `Tổng cộng hỗ trợ hơn 400 định dạng tệp!`;
           const result = await sendMessage(chatId, formatsMessage, env);
-          console.log("/formats命令响应:", JSON.stringify(result).substring(0, 200));
+          console.log("Phản hồi lệnh /formats:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
-          console.error("发送/formats消息失败:", error);
+          console.error("Gửi tin nhắn /formats thất bại:", error);
         }
       } else if (command === '/stats') {
         try {
-          console.log("开始处理/stats命令");
+          console.log("Bắt đầu xử lý lệnh /stats");
           const stats = await getUserStats(chatId, env);
           const statsMessage = formatStatsMessage(stats);
           const result = await sendMessage(chatId, statsMessage, env);
-          console.log("/stats命令响应:", JSON.stringify(result).substring(0, 200));
+          console.log("Phản hồi lệnh /stats:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
-          console.error("发送/stats消息失败:", error);
+          console.error("Gửi tin nhắn /stats thất bại:", error);
         }
       } else if (command === '/storage') {
         try {
-          console.log("开始处理/storage命令");
+          console.log("Bắt đầu xử lý lệnh /storage");
           const stats = await getUserStats(chatId, env);
           const storageMessage = formatStorageMessage(stats);
           const result = await sendMessage(chatId, storageMessage, env);
-          console.log("/storage命令响应:", JSON.stringify(result).substring(0, 200));
+          console.log("Phản hồi lệnh /storage:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
-          console.error("发送/storage消息失败:", error);
+          console.error("Gửi tin nhắn /storage thất bại:", error);
         }
       } else if (command === '/report') {
         try {
-          console.log("开始处理/report命令");
+          console.log("Bắt đầu xử lý lệnh /report");
           const periodArg = text.split(' ')[1]?.toLowerCase();
-          let period = 'monthly'; // 默认为月报告
+          let period = 'monthly'; // Mặc định là báo cáo tháng
           
           if (periodArg === 'daily' || periodArg === 'day') {
             period = 'daily';
@@ -373,34 +373,34 @@ async function handleRequest(request, env) {
           const report = await getUserReport(chatId, period, env);
           const reportMessage = formatReportMessage(report, period);
           const result = await sendMessage(chatId, reportMessage, env);
-          console.log(`/${period} report命令响应:`, JSON.stringify(result).substring(0, 200));
+          console.log(`Phản hồi lệnh báo cáo ${period}:`, JSON.stringify(result).substring(0, 200));
         } catch (error) {
-          console.error("发送/report消息失败:", error);
+          console.error("Gửi tin nhắn /report thất bại:", error);
         }
       } else if (command === '/success_rate') {
         try {
-          console.log("开始处理/success_rate命令");
+          console.log("Bắt đầu xử lý lệnh /success_rate");
           const stats = await getUserStats(chatId, env);
           const successRateMessage = formatSuccessRateMessage(stats);
           const result = await sendMessage(chatId, successRateMessage, env);
-          console.log("/success_rate命令响应:", JSON.stringify(result).substring(0, 200));
+          console.log("Phản hồi lệnh /success_rate:", JSON.stringify(result).substring(0, 200));
         } catch (error) {
-          console.error("发送/success_rate消息失败:", error);
+          console.error("Gửi tin nhắn /success_rate thất bại:", error);
         }
       } else if (command === '/analytics' || command === '/analytics@' + env.BOT_USERNAME) {
         try {
-          console.log("开始处理/analytics命令");
+          console.log("Bắt đầu xử lý lệnh /analytics");
           const args = text.split(' ')[1]?.toLowerCase();
           
-          // 根据参数决定显示哪种统计信息
+          // Quyết định hiển thị loại thông tin thống kê nào dựa trên tham số
           if (args === 'storage') {
-            // 显示存储统计
+            // Hiển thị thống kê lưu trữ
             const stats = await getUserStats(chatId, env);
             const storageMessage = formatStorageMessage(stats);
             await sendMessage(chatId, storageMessage, env);
           } else if (args === 'report' || args === 'daily' || args === 'weekly' || args === 'monthly') {
-            // 显示使用报告
-            let period = 'monthly'; // 默认为月报告
+            // Hiển thị báo cáo sử dụng
+            let period = 'monthly'; // Mặc định là báo cáo tháng
             
             if (args === 'daily') {
               period = 'daily';
@@ -412,33 +412,33 @@ async function handleRequest(request, env) {
             const reportMessage = formatReportMessage(report, period);
             await sendMessage(chatId, reportMessage, env);
           } else if (args === 'success' || args === 'success_rate') {
-            // 显示成功率
+            // Hiển thị tỷ lệ thành công
             const stats = await getUserStats(chatId, env);
             const successRateMessage = formatSuccessRateMessage(stats);
             await sendMessage(chatId, successRateMessage, env);
           } else {
-            // 默认显示综合统计信息
+            // Mặc định hiển thị thống kê tổng hợp
             const stats = await getUserStats(chatId, env);
             const statsMessage = formatStatsMessage(stats);
             await sendMessage(chatId, statsMessage, env);
           }
           
-          console.log("/analytics命令响应已发送");
+          console.log("Đã gửi phản hồi lệnh /analytics");
         } catch (error) {
-          console.error("发送/analytics消息失败:", error);
-          await sendMessage(chatId, `❌ 获取统计信息失败: ${error.message}`, env);
+          console.error("Gửi tin nhắn /analytics thất bại:", error);
+          await sendMessage(chatId, `❌ Lấy thông tin thống kê thất bại: ${error.message}`, env);
         }
       } else if (command === '/history' || command === '/history@' + env.BOT_USERNAME) {
         try {
-          console.log("开始处理/history命令");
-          // 解析参数
+          console.log("Bắt đầu xử lý lệnh /history");
+          // Phân tích tham số
           const args = text.split(' ');
           let page = 1;
           let fileType = null;
           let searchQuery = null;
-          let descQuery = null; // 新增：专门用于备注搜索的查询
+          let descQuery = null; // Mới: Truy vấn dành riêng cho việc tìm kiếm ghi chú
           
-          // 寻找搜索关键词
+          // Tìm từ khóa tìm kiếm
           if (text.includes('search:') || text.includes('搜索:')) {
             const searchMatch = text.match(/(search:|搜索:)\s*([^\s]+)/i);
             if (searchMatch && searchMatch[2]) {
@@ -446,7 +446,7 @@ async function handleRequest(request, env) {
             }
           }
           
-          // 寻找备注搜索关键词
+          // Tìm từ khóa tìm kiếm ghi chú
           if (text.includes('desc:') || text.includes('备注:')) {
             const descMatch = text.match(/(desc:|备注:)\s*([^\s]+)/i);
             if (descMatch && descMatch[2]) {
@@ -454,11 +454,11 @@ async function handleRequest(request, env) {
             }
           }
           
-          // 解析页码参数
+          // Phân tích tham số số trang
           for (let i = 1; i < args.length; i++) {
             const arg = args[i].toLowerCase();
             
-            // 如果已经找到搜索关键词，跳过后续处理
+            // Nếu đã tìm thấy từ khóa tìm kiếm, bỏ qua xử lý tiếp theo
             if (searchQuery || descQuery) continue;
             
             if (arg.startsWith('p') || arg.startsWith('page')) {
@@ -477,57 +477,57 @@ async function handleRequest(request, env) {
           
           await handleHistoryCommand(chatId, page, fileType, searchQuery, descQuery, env);
         } catch (error) {
-          console.error("发送/history消息失败:", error);
-          await sendMessage(chatId, `❌ 获取历史记录失败: ${error.message}`, env);
+          console.error("Gửi tin nhắn /history thất bại:", error);
+          await sendMessage(chatId, `❌ Lấy lịch sử tải lên thất bại: ${error.message}`, env);
         }
       } else {
-        console.log("未知命令:", command);
+        console.log("Lệnh không xác định:", command);
         try {
-          await sendMessage(chatId, `未知命令：${command}。请使用 /start 或 /help 获取帮助。`, env);
+          await sendMessage(chatId, `Lệnh không xác định：${command}。Vui lòng sử dụng /start hoặc /help để xem hướng dẫn.`, env);
         } catch (error) {
-          console.error("发送未知命令消息失败:", error);
+          console.error("Gửi tin nhắn lệnh không xác định thất bại:", error);
         }
       }
       return new Response('OK', { status: 200 });
     }
 
-    // 检查是否处于分片上传模式
+    // Kiểm tra xem có đang ở chế độ tải lên phân đoạn không
     const isInChunkUploadMode = await isUserInChunkUploadMode(userId, env);
     if (isInChunkUploadMode) {
-      // 处理分片上传中的消息
+      // Xử lý các tin nhắn trong quá trình tải lên phân đoạn
       await handleChunkUploadMessage(message, chatId, userId, env);
       return new Response('OK', { status: 200 });
     }
 
-    // 自动处理图片
+    // Tự động xử lý hình ảnh
     if (message.photo && message.photo.length > 0) {
       try {
-        console.log(`开始处理图片，长度: ${message.photo.length}`);
-        // 确保用户被添加到用户列表
+        console.log(`Bắt đầu xử lý hình ảnh, độ dài: ${message.photo.length}`);
+        // Đảm bảo người dùng được thêm vào danh sách người dùng
         await addUserToList(userId, username, env);
         await handlePhoto(message, chatId, env);
       } catch (error) {
-        console.error("处理图片时出错:", error);
-        await sendMessage(chatId, `❌ 处理图片时出错: ${error.message}`, env).catch(e => console.error("发送图片错误消息失败:", e));
+        console.error("Lỗi khi xử lý hình ảnh:", error);
+        await sendMessage(chatId, `❌ Lỗi khi xử lý hình ảnh: ${error.message}`, env).catch(e => console.error("Gửi thông báo lỗi hình ảnh thất bại:", e));
       }
     }
-    // 自动处理视频
+    // Tự động xử lý video
     else if (message.video || (message.document &&
             (message.document.mime_type?.startsWith('video/') ||
              message.document.file_name?.match(/\.(mp4|avi|mov|wmv|flv|mkv|webm|m4v|3gp|mpeg|mpg|ts|rmvb|rm|asf|amv|mts|m2ts|vob|divx|ogm|ogv)$/i)))) {
       try {
-        console.log(`开始处理视频，类型: ${message.video ? 'video' : 'document'}`);
-        // 确保用户被添加到用户列表
+        console.log(`Bắt đầu xử lý video, loại: ${message.video ? 'video' : 'document'}`);
+        // Đảm bảo người dùng được thêm vào danh sách người dùng
         await addUserToList(userId, username, env);
         await handleVideo(message, chatId, !!message.document, env);
       } catch (error) {
-        console.error('处理视频时出错:', error);
+        console.error('Lỗi khi xử lý video:', error);
         let errorDetails = '';
         if (error.message) {
-          errorDetails = `\n错误详情: ${error.message}`;
+          errorDetails = `\nChi tiết lỗi: ${error.message}`;
         }
         
-        const errorMsg = `❌ 处理视频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送视频\n2. 如果视频较大，可以尝试压缩后再发送\n3. 尝试将视频转换为MP4格式`;
+        const errorMsg = `❌ Lỗi khi xử lý video.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại video\n2. Nếu video lớn, hãy thử nén trước khi gửi\n3. Thử chuyển đổi video sang định dạng MP4`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
@@ -535,23 +535,23 @@ async function handleRequest(request, env) {
         }
       }
     }
-    // 自动处理音频
+    // Tự động xử lý âm thanh
     else if (message.audio || (message.document &&
             (message.document.mime_type?.startsWith('audio/') ||
              message.document.file_name?.match(/\.(mp3|wav|ogg|flac|aac|m4a|wma|opus|mid|midi|ape|ra|amr|au|voc|ac3|dsf|dsd|dts|ast|aiff|aifc|spx|gsm|wv|tta|mpc|tak)$/i)))) {
       try {
-        console.log(`开始处理音频，类型: ${message.audio ? 'audio' : 'document'}`);
-        // 确保用户被添加到用户列表
+        console.log(`Bắt đầu xử lý âm thanh, loại: ${message.audio ? 'audio' : 'document'}`);
+        // Đảm bảo người dùng được thêm vào danh sách người dùng
         await addUserToList(userId, username, env);
         await handleAudio(message, chatId, !!message.document, env);
       } catch (error) {
-        console.error('处理音频时出错:', error);
+        console.error('Lỗi khi xử lý âm thanh:', error);
         let errorDetails = '';
         if (error.message) {
-          errorDetails = `\n错误详情: ${error.message}`;
+          errorDetails = `\nChi tiết lỗi: ${error.message}`;
         }
         
-        const errorMsg = `❌ 处理音频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送音频\n2. 尝试将音频转换为MP3格式`;
+        const errorMsg = `❌ Lỗi khi xử lý âm thanh.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại âm thanh\n2. Thử chuyển đổi âm thanh sang định dạng MP3`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
@@ -559,23 +559,23 @@ async function handleRequest(request, env) {
         }
       }
     }
-    // 自动处理动画/GIF
+    // Tự động xử lý ảnh động/GIF
     else if (message.animation || (message.document &&
             (message.document.mime_type?.includes('animation') ||
              message.document.file_name?.match(/\.(gif|webp|apng|flif|avif)$/i)))) {
       try {
-        console.log(`开始处理动画，类型: ${message.animation ? 'animation' : 'document'}`);
-        // 确保用户被添加到用户列表
+        console.log(`Bắt đầu xử lý ảnh động, loại: ${message.animation ? 'animation' : 'document'}`);
+        // Đảm bảo người dùng được thêm vào danh sách người dùng
         await addUserToList(userId, username, env);
         await handleAnimation(message, chatId, !!message.document, env);
       } catch (error) {
-        console.error('处理动画时出错:', error);
+        console.error('Lỗi khi xử lý ảnh động:', error);
         let errorDetails = '';
         if (error.message) {
-          errorDetails = `\n错误详情: ${error.message}`;
+          errorDetails = `\nChi tiết lỗi: ${error.message}`;
         }
         
-        const errorMsg = `❌ 处理动画时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送GIF\n2. 尝试将动画转换为标准GIF格式`;
+        const errorMsg = `❌ Lỗi khi xử lý ảnh động.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại GIF\n2. Thử chuyển đổi ảnh động sang định dạng GIF chuẩn`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
@@ -583,21 +583,21 @@ async function handleRequest(request, env) {
         }
       }
     }
-    // 处理其他所有文档类型
+    // Xử lý tất cả các loại tài liệu khác
     else if (message.document) {
       try {
-        console.log(`开始处理文档，mime类型: ${message.document.mime_type || '未知'}`);
-        // 确保用户被添加到用户列表
+        console.log(`Bắt đầu xử lý tài liệu, loại mime: ${message.document.mime_type || 'Không xác định'}`);
+        // Đảm bảo người dùng được thêm vào danh sách người dùng
         await addUserToList(userId, username, env);
         await handleDocument(message, chatId, env);
       } catch (error) {
-        console.error('处理文件时出错:', error);
+        console.error('Lỗi khi xử lý tệp:', error);
         let errorDetails = '';
         if (error.message) {
-          errorDetails = `\n错误详情: ${error.message}`;
+          errorDetails = `\nChi tiết lỗi: ${error.message}`;
         }
         
-        const errorMsg = `❌ 处理文件时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送文件\n2. 如果文件较大，可以尝试压缩后再发送`;
+        const errorMsg = `❌ Lỗi khi xử lý tệp.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại tệp\n2. Nếu tệp lớn, hãy thử nén trước khi gửi`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
@@ -605,36 +605,36 @@ async function handleRequest(request, env) {
         }
       }
     } else {
-      console.log("收到无法处理的消息类型");
-      await sendMessage(chatId, "⚠️ 未能识别的消息类型。请发送图片、视频、音频或文档文件。", env);
+      console.log("Nhận được loại tin nhắn không thể xử lý");
+      await sendMessage(chatId, "⚠️ Không thể nhận diện loại tin nhắn này. Vui lòng gửi ảnh, video, âm thanh hoặc tệp tài liệu.", env);
     }
 
     return new Response('OK', { status: 200 });
   } catch (error) {
-    console.error('处理请求时出错:', error); // 在Worker日志中打印错误
-    // 避免将详细错误信息返回给客户端，但可以在需要时发送通用错误消息
-    await sendMessage(env.ADMIN_CHAT_ID || chatId, `处理请求时内部错误: ${error.message}`, env).catch(e => console.error("Failed to send error message:", e)); // 尝试通知管理员或用户
-    return new Response('处理请求时出错', { status: 500 });
+    console.error('Lỗi khi xử lý yêu cầu:', error); // In lỗi trong nhật ký Worker
+    // Tránh trả về chi tiết lỗi cho phía người dùng, nhưng có thể gửi tin nhắn lỗi chung khi cần thiết
+    await sendMessage(env.ADMIN_CHAT_ID || chatId, `Lỗi nội bộ khi xử lý yêu cầu: ${error.message}`, env).catch(e => console.error("Gửi tin nhắn lỗi thất bại:", e)); // Cố gắng thông báo cho quản trị viên hoặc người dùng
+    return new Response('Lỗi khi xử lý yêu cầu', { status: 500 });
   }
 }
 
-// 处理图片上传，接收 env 对象
+// Xử lý tải lên hình ảnh, nhận đối tượng env
 async function handlePhoto(message, chatId, env) {
   const photo = message.photo[message.photo.length - 1];
   const fileId = photo.file_id;
-  // 获取用户的图片描述作为备注
+  // Lấy mô tả ảnh của người dùng để làm ghi chú
   const photoDescription = message.caption || "";
 
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
+  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // Xây dựng URL API
 
-  // 发送处理中消息并获取消息ID以便后续更新
-  const sendResult = await sendMessage(chatId, '🔄 正在处理您的图片，请稍候...', env);
+  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
+  const sendResult = await sendMessage(chatId, '🔄 Đang xử lý hình ảnh của bạn, vui lòng đợi...', env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
-  const fileInfo = await getFile(fileId, env); // 传递env
+  const fileInfo = await getFile(fileId, env); // Truyền env
 
   if (fileInfo && fileInfo.ok) {
     const filePath = fileInfo.result.file_path;
@@ -645,9 +645,9 @@ async function handlePhoto(message, chatId, env) {
     const fileSize = imgBuffer.byteLength;
     const fileName = `image_${Date.now()}.jpg`;
 
-    // 添加大小检查
+    // Thêm kiểm tra kích thước
     if (fileSize / (1024 * 1024) > 20) { // 20MB
-      const warningMsg = `⚠️ 图片太大 (${formatFileSize(fileSize)})，超出20MB限制，无法上传。`;
+      const warningMsg = `⚠️ Hình ảnh quá lớn (${formatFileSize(fileSize)}), vượt quá giới hạn 20MB, không thể tải lên.`;
       if (messageId) {
         await editMessage(chatId, messageId, warningMsg, env);
       } else {
@@ -662,15 +662,15 @@ async function handlePhoto(message, chatId, env) {
     const uploadUrl = new URL(IMG_BED_URL);
     uploadUrl.searchParams.append('returnFormat', 'full');
 
-    // 准备请求头，把认证码放在头部而不是URL参数里
+    // Chuẩn bị header yêu cầu, đặt mã xác thực vào header thay vì tham số URL
     const headers = {};
     if (AUTH_CODE) {
       headers['Authorization'] = `Bearer ${AUTH_CODE}`;
-      // 同时保留URL参数认证方式，以防API要求
+      // Đồng thời giữ phương thức xác thực qua tham số URL để đề phòng API yêu cầu
       uploadUrl.searchParams.append('authCode', AUTH_CODE);
     }
 
-    console.log(`图片上传请求 URL: ${uploadUrl.toString()}`);
+    console.log(`URL yêu cầu tải ảnh lên: ${uploadUrl.toString()}`);
 
     try {
       const uploadResponse = await fetch(uploadUrl, {
@@ -679,46 +679,46 @@ async function handlePhoto(message, chatId, env) {
         body: formData
       });
 
-      console.log('图片上传状态码:', uploadResponse.status);
+      console.log('Mã trạng thái tải ảnh lên:', uploadResponse.status);
       
       const responseText = await uploadResponse.text();
-      console.log('图片上传原始响应:', responseText);
+      console.log('Phản hồi gốc khi tải ảnh lên:', responseText);
 
       let uploadResult;
       try {
         uploadResult = JSON.parse(responseText);
       } catch (e) {
-        console.error('解析响应JSON失败:', e);
+        console.error('Phân tích JSON phản hồi thất bại:', e);
         uploadResult = responseText;
       }
 
-      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // 传递 IMG_BED_URL 作为基础
+      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // Truyền IMG_BED_URL làm cơ sở
       const imgUrl = extractedResult.url;
-      // 使用提取的文件名或默认值
+      // Sử dụng tên tệp đã trích xuất hoặc giá trị mặc định
       const actualFileName = extractedResult.fileName || fileName;
-      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      // Sử dụng kích thước tệp đã tải lên, thay vì từ phản hồi (nếu có trong phản hồi, nó sẽ được trích xuất trong extractUrlFromResult)
       const actualFileSize = extractedResult.fileSize || fileSize;
 
       if (imgUrl) {
-        let msgText = `✅ 图片上传成功！\n\n` +
-                     `📄 文件名: ${actualFileName}\n`;
+        let msgText = `✅ Tải ảnh lên thành công!\n\n` +
+                     `📄 Tên tệp: ${actualFileName}\n`;
         
-        // 如果有图片描述，添加备注信息
+        // Nếu có mô tả ảnh, thêm thông tin ghi chú
         if (photoDescription) {
-          msgText += `📝 备注: ${photoDescription}\n`;
+          msgText += `📝 Ghi chú: ${photoDescription}\n`;
         }
         
-        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                  `🔗 URL：${imgUrl}`;
+        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL: ${imgUrl}`;
         
-        // 更新之前的消息而不是发送新消息
+        // Cập nhật tin nhắn trước đó thay vì gửi tin nhắn mới
         if (messageId) {
           await editMessage(chatId, messageId, msgText, env);
         } else {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据，添加备注字段
+        // Cập nhật thống kê người dùng, thêm trường ghi chú
         await updateUserStats(chatId, {
           fileType: 'image',
           fileSize: actualFileSize,
@@ -728,14 +728,14 @@ async function handlePhoto(message, chatId, env) {
           description: photoDescription
         }, env);
       } else {
-        const errorMsg = `❌ 无法解析上传结果，原始响应:\n${responseText.substring(0, 200)}...`;
+        const errorMsg = `❌ Không thể phân tích kết quả tải lên, phản hồi gốc:\n${responseText.substring(0, 200)}...`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
         
-        // 更新失败统计
+        // Cập nhật thống kê thất bại
         await updateUserStats(chatId, {
           fileType: 'image',
           fileSize: fileSize,
@@ -743,8 +743,8 @@ async function handlePhoto(message, chatId, env) {
         }, env);
       }
     } catch (error) {
-      console.error('处理图片上传时出错:', error);
-      const errorMsg = `❌ 处理图片上传时出错: ${error.message}\n\n可能是图片太大或格式不支持。`;
+      console.error('Lỗi khi xử lý tải ảnh lên:', error);
+      const errorMsg = `❌ Lỗi khi xử lý tải ảnh lên: ${error.message}\n\nCó thể do ảnh quá lớn hoặc định dạng không được hỗ trợ.`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -752,7 +752,7 @@ async function handlePhoto(message, chatId, env) {
       }
     }
   } else {
-    const errorMsg = '❌ 无法获取图片信息，请稍后再试。';
+    const errorMsg = '❌ Không thể lấy thông tin hình ảnh, vui lòng thử lại sau.';
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -761,24 +761,24 @@ async function handlePhoto(message, chatId, env) {
   }
 }
 
-// 处理视频上传，接收 env 对象
+// Xử lý tải lên video, nhận đối tượng env
 async function handleVideo(message, chatId, isDocument = false, env) {
   const fileId = isDocument ? message.document.file_id : message.video.file_id;
   const fileName = isDocument ? message.document.file_name : `video_${Date.now()}.mp4`;
-  // 获取用户的视频描述作为备注
+  // Lấy mô tả video của người dùng để làm ghi chú
   const videoDescription = message.caption || "";
 
-  // 从 env 获取配置
+  // Lấy cấu hình từ env
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
+  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // Xây dựng URL API
 
-  // 发送处理中消息并获取消息ID以便后续更新
-  const sendResult = await sendMessage(chatId, `🔄 正在处理您的视频 "${fileName}"，请稍候...`, env);
+  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
+  const sendResult = await sendMessage(chatId, `🔄 Đang xử lý video "${fileName}" của bạn, vui lòng đợi...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
-  const fileInfo = await getFile(fileId, env); // 传递env
+  const fileInfo = await getFile(fileId, env); // Truyền env
 
   if (fileInfo && fileInfo.ok) {
     const filePath = fileInfo.result.file_path;
@@ -786,14 +786,14 @@ async function handleVideo(message, chatId, isDocument = false, env) {
 
     try {
       const videoResponse = await fetch(fileUrl);
-      if (!videoResponse.ok) throw new Error(`获取视频失败: ${videoResponse.status}`);
+      if (!videoResponse.ok) throw new Error(`Lấy video thất bại: ${videoResponse.status}`);
 
       const videoBuffer = await videoResponse.arrayBuffer();
       const videoSize = videoBuffer.byteLength;
       const fileSizeFormatted = formatFileSize(videoSize);
       
       if (videoSize / (1024 * 1024) > 20) { // 20MB
-        const warningMsg = `⚠️ 视频太大 (${fileSizeFormatted})，超出20MB限制，无法上传。`;
+        const warningMsg = `⚠️ Video quá lớn (${fileSizeFormatted}), vượt quá giới hạn 20MB, không thể tải lên.`;
         if (messageId) {
           await editMessage(chatId, messageId, warningMsg, env);
         } else {
@@ -809,11 +809,11 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       const uploadUrl = new URL(IMG_BED_URL);
       uploadUrl.searchParams.append('returnFormat', 'full');
 
-      if (AUTH_CODE) { // 检查从env获取的AUTH_CODE
+      if (AUTH_CODE) { // Kiểm tra AUTH_CODE lấy từ env
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
       }
 
-      console.log(`视频上传请求 URL: ${uploadUrl.toString()}`);
+      console.log(`URL yêu cầu tải video lên: ${uploadUrl.toString()}`);
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -822,7 +822,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       });
 
       const responseText = await uploadResponse.text();
-      console.log('视频上传原始响应:', responseText);
+      console.log('Phản hồi gốc khi tải video lên:', responseText);
 
       let uploadResult;
       try {
@@ -837,16 +837,16 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       const actualFileSize = extractedResult.fileSize || videoSize;
 
       if (videoUrl) {
-        let msgText = `✅ 视频上传成功！\n\n` + 
-                     `📄 文件名: ${actualFileName}\n`;
+        let msgText = `✅ Tải video lên thành công!\n\n` + 
+                     `📄 Tên tệp: ${actualFileName}\n`;
         
-        // 如果有视频描述，添加备注信息
+        // Nếu có mô tả video, thêm thông tin ghi chú
         if (videoDescription) {
-          msgText += `📝 备注: ${videoDescription}\n`;
+          msgText += `📝 Ghi chú: ${videoDescription}\n`;
         }
         
-        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                  `🔗 URL：${videoUrl}`;
+        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL: ${videoUrl}`;
 
         if (messageId) {
           await editMessage(chatId, messageId, msgText, env);
@@ -854,7 +854,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据，添加备注字段
+        // Cập nhật thống kê người dùng, thêm trường ghi chú
         await updateUserStats(chatId, {
           fileType: 'video',
           fileSize: actualFileSize,
@@ -864,14 +864,14 @@ async function handleVideo(message, chatId, isDocument = false, env) {
           description: videoDescription
         }, env);
       } else {
-        const errorMsg = `⚠️ 无法从图床获取视频链接。请稍后再试。`;
+        const errorMsg = `⚠️ Không thể lấy được liên kết video từ kho ảnh. Vui lòng thử lại sau.`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
         
-        // 更新失败统计
+        // Cập nhật thống kê thất bại
         await updateUserStats(chatId, {
           fileType: 'video',
           fileSize: videoSize,
@@ -879,8 +879,8 @@ async function handleVideo(message, chatId, isDocument = false, env) {
         }, env);
       }
     } catch (error) {
-      console.error('处理视频时出错:', error);
-      const errorMsg = `❌ 处理视频时出错: ${error.message}`;
+      console.error('Lỗi khi xử lý video:', error);
+      const errorMsg = `❌ Lỗi khi xử lý video: ${error.message}`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -888,7 +888,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       }
     }
   } else {
-    const errorMsg = '❌ 无法获取视频信息，请稍后再试。';
+    const errorMsg = '❌ Không thể lấy thông tin video, vui lòng thử lại sau.';
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -897,22 +897,22 @@ async function handleVideo(message, chatId, isDocument = false, env) {
   }
 }
 
-// 处理音频上传
+// Xử lý tải lên âm thanh
 async function handleAudio(message, chatId, isDocument = false, env) {
   const fileId = isDocument ? message.document.file_id : message.audio.file_id;
   const fileName = isDocument 
     ? message.document.file_name 
     : (message.audio.title || message.audio.file_name || `audio_${Date.now()}.mp3`);
-  // 获取用户的音频描述作为备注
+  // Lấy mô tả âm thanh của người dùng để làm ghi chú
   const audioDescription = message.caption || "";
 
-  // 从 env 获取配置
+  // Lấy cấu hình từ env
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
 
-  // 发送处理中消息并获取消息ID以便后续更新
-  const sendResult = await sendMessage(chatId, `🔄 正在处理您的音频 "${fileName}"，请稍候...`, env);
+  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
+  const sendResult = await sendMessage(chatId, `🔄 Đang xử lý âm thanh "${fileName}" của bạn, vui lòng đợi...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
@@ -923,14 +923,14 @@ async function handleAudio(message, chatId, isDocument = false, env) {
 
     try {
       const audioResponse = await fetch(fileUrl);
-      if (!audioResponse.ok) throw new Error(`获取音频失败: ${audioResponse.status}`);
+      if (!audioResponse.ok) throw new Error(`Lấy âm thanh thất bại: ${audioResponse.status}`);
 
       const audioBuffer = await audioResponse.arrayBuffer();
       const audioSize = audioBuffer.byteLength;
       const fileSizeFormatted = formatFileSize(audioSize);
       
       if (audioSize / (1024 * 1024) > 20) { // 20MB
-        const warningMsg = `⚠️ 音频太大 (${fileSizeFormatted})，超出20MB限制，无法上传。`;
+        const warningMsg = `⚠️ Âm thanh quá lớn (${fileSizeFormatted}), vượt quá giới hạn 20MB, không thể tải lên.`;
         if (messageId) {
           await editMessage(chatId, messageId, warningMsg, env);
         } else {
@@ -952,7 +952,7 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
       }
 
-      console.log(`音频上传请求 URL: ${uploadUrl.toString()}`);
+      console.log(`URL yêu cầu tải âm thanh lên: ${uploadUrl.toString()}`);
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -961,7 +961,7 @@ async function handleAudio(message, chatId, isDocument = false, env) {
       });
 
       const responseText = await uploadResponse.text();
-      console.log('音频上传原始响应:', responseText);
+      console.log('Phản hồi gốc khi tải âm thanh lên:', responseText);
 
       let uploadResult;
       try {
@@ -972,31 +972,31 @@ async function handleAudio(message, chatId, isDocument = false, env) {
 
       const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
       const audioUrl = extractedResult.url;
-      // 使用提取的文件名或默认值
+      // Sử dụng tên tệp đã trích xuất hoặc giá trị mặc định
       const actualFileName = extractedResult.fileName || fileName;
-      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      // Sử dụng kích thước tệp đã tải lên, thay vì từ phản hồi (nếu có trong phản hồi, nó sẽ được trích xuất trong extractUrlFromResult)
       const actualFileSize = extractedResult.fileSize || audioSize;
 
       if (audioUrl) {
-        let msgText = `✅ 音频上传成功！\n\n` +
-                     `📄 文件名: ${actualFileName}\n`;
+        let msgText = `✅ Tải âm thanh lên thành công!\n\n` +
+                     `📄 Tên tệp: ${actualFileName}\n`;
         
-        // 如果有音频描述，添加备注信息
+        // Nếu có mô tả âm thanh, thêm thông tin ghi chú
         if (audioDescription) {
-          msgText += `📝 备注: ${audioDescription}\n`;
+          msgText += `📝 Ghi chú: ${audioDescription}\n`;
         }
         
-        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                  `🔗 URL：${audioUrl}`;
+        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL: ${audioUrl}`;
         
-        // 更新之前的消息而不是发送新消息
+        // Cập nhật tin nhắn trước đó thay vì gửi tin nhắn mới
         if (messageId) {
           await editMessage(chatId, messageId, msgText, env);
         } else {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据，添加备注字段
+        // Cập nhật thống kê người dùng, thêm trường ghi chú
         await updateUserStats(chatId, {
           fileType: 'audio',
           fileSize: actualFileSize,
@@ -1006,14 +1006,14 @@ async function handleAudio(message, chatId, isDocument = false, env) {
           description: audioDescription
         }, env);
       } else {
-        const errorMsg = `⚠️ 无法从图床获取音频链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        const errorMsg = `⚠️ Không thể lấy được liên kết âm thanh từ kho ảnh. Phản hồi gốc (200 ký tự đầu):\n${responseText.substring(0, 200)}... \n\nHoặc thử liên kết tạm thời của Telegram (có hiệu lực hạn chế):\n${fileUrl}`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
         
-        // 更新失败统计
+        // Cập nhật thống kê thất bại
         await updateUserStats(chatId, {
           fileType: 'audio',
           fileSize: audioSize,
@@ -1021,13 +1021,13 @@ async function handleAudio(message, chatId, isDocument = false, env) {
         }, env);
       }
     } catch (error) {
-      console.error('处理音频时出错:', error);
+      console.error('Lỗi khi xử lý âm thanh:', error);
       let errorDetails = '';
       if (error.message) {
-        errorDetails = `\n错误详情: ${error.message}`;
+        errorDetails = `\nChi tiết lỗi: ${error.message}`;
       }
       
-      const errorMsg = `❌ 处理音频时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送音频\n2. 尝试将音频转换为MP3格式`;
+      const errorMsg = `❌ Lỗi khi xử lý âm thanh.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại âm thanh\n2. Thử chuyển đổi âm thanh sang định dạng MP3`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -1037,11 +1037,11 @@ async function handleAudio(message, chatId, isDocument = false, env) {
   } else {
     let errorDetails = '';
     if (fileInfo.error) {
-      errorDetails = `\n错误详情: ${fileInfo.error}`;
-      console.error(`获取音频文件信息失败: ${fileInfo.error}`);
+      errorDetails = `\nChi tiết lỗi: ${fileInfo.error}`;
+      console.error(`Lấy thông tin tệp âm thanh thất bại: ${fileInfo.error}`);
     }
     
-    const errorMsg = `❌ 无法获取音频信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送音频\n2. 尝试将音频转换为MP3格式`;
+    const errorMsg = `❌ Không thể lấy thông tin âm thanh, vui lòng thử lại sau.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại âm thanh\n2. Thử chuyển đổi âm thanh sang định dạng MP3`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -1050,22 +1050,22 @@ async function handleAudio(message, chatId, isDocument = false, env) {
   }
 }
 
-// 处理动画/GIF上传
+// Xử lý tải lên ảnh động/GIF
 async function handleAnimation(message, chatId, isDocument = false, env) {
   const fileId = isDocument ? message.document.file_id : message.animation.file_id;
   const fileName = isDocument 
     ? message.document.file_name 
     : (message.animation.file_name || `animation_${Date.now()}.gif`);
-  // 获取用户的动画描述作为备注
+  // Lấy mô tả ảnh động của người dùng để làm ghi chú
   const animDescription = message.caption || "";
 
-  // 从 env 获取配置
+  // Lấy cấu hình từ env
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
 
-  // 发送处理中消息并获取消息ID以便后续更新
-  const sendResult = await sendMessage(chatId, `🔄 正在处理您的动画/GIF "${fileName}"，请稍候...`, env);
+  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
+  const sendResult = await sendMessage(chatId, `🔄 Đang xử lý ảnh động/GIF "${fileName}" của bạn, vui lòng đợi...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
@@ -1076,14 +1076,14 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
 
     try {
       const animResponse = await fetch(fileUrl);
-      if (!animResponse.ok) throw new Error(`获取动画失败: ${animResponse.status}`);
+      if (!animResponse.ok) throw new Error(`Lấy ảnh động thất bại: ${animResponse.status}`);
 
       const animBuffer = await animResponse.arrayBuffer();
       const animSize = animBuffer.byteLength;
       const fileSizeFormatted = formatFileSize(animSize);
       
       if (animSize / (1024 * 1024) > 20) { // 20MB
-        const warningMsg = `⚠️ 动画太大 (${fileSizeFormatted})，超出20MB限制，无法上传。`;
+        const warningMsg = `⚠️ Ảnh động quá lớn (${fileSizeFormatted}), vượt quá giới hạn 20MB, không thể tải lên.`;
         if (messageId) {
           await editMessage(chatId, messageId, warningMsg, env);
         } else {
@@ -1105,7 +1105,7 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
       }
 
-      console.log(`动画上传请求 URL: ${uploadUrl.toString()}`);
+      console.log(`URL yêu cầu tải ảnh động lên: ${uploadUrl.toString()}`);
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -1114,7 +1114,7 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
       });
 
       const responseText = await uploadResponse.text();
-      console.log('动画上传原始响应:', responseText);
+      console.log('Phản hồi gốc khi tải ảnh động lên:', responseText);
 
       let uploadResult;
       try {
@@ -1125,31 +1125,31 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
 
       const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
       const animUrl = extractedResult.url;
-      // 使用提取的文件名或默认值
+      // Sử dụng tên tệp đã trích xuất hoặc giá trị mặc định
       const actualFileName = extractedResult.fileName || fileName;
-      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      // Sử dụng kích thước tệp đã tải lên, thay vì từ phản hồi (nếu có trong phản hồi, nó sẽ được trích xuất trong extractUrlFromResult)
       const actualFileSize = extractedResult.fileSize || animSize;
 
       if (animUrl) {
-        let msgText = `✅ 动画/GIF上传成功！\n\n` +
-                     `📄 文件名: ${actualFileName}\n`;
+        let msgText = `✅ Tải ảnh động/GIF thành công!\n\n` +
+                     `📄 Tên tệp: ${actualFileName}\n`;
         
-        // 如果有动画描述，添加备注信息
+        // Nếu có mô tả ảnh động, thêm thông tin ghi chú
         if (animDescription) {
-          msgText += `📝 备注: ${animDescription}\n`;
+          msgText += `📝 Ghi chú: ${animDescription}\n`;
         }
         
-        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                  `🔗 URL：${animUrl}`;
+        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
+                  `🔗 URL: ${animUrl}`;
         
-        // 更新之前的消息而不是发送新消息
+        // Cập nhật tin nhắn trước đó thay vì gửi tin nhắn mới
         if (messageId) {
           await editMessage(chatId, messageId, msgText, env);
         } else {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据，添加备注字段
+        // Cập nhật thống kê người dùng, thêm trường ghi chú
         await updateUserStats(chatId, {
           fileType: 'animation',
           fileSize: actualFileSize,
@@ -1159,14 +1159,14 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
           description: animDescription
         }, env);
       } else {
-        const errorMsg = `⚠️ 无法从图床获取动画链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        const errorMsg = `⚠️ Không thể lấy được liên kết ảnh động từ kho ảnh. Phản hồi gốc (200 ký tự đầu):\n${responseText.substring(0, 200)}... \n\nHoặc thử liên kết tạm thời của Telegram (có hiệu lực hạn chế):\n${fileUrl}`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
         
-        // 更新失败统计
+        // Cập nhật thống kê thất bại
         await updateUserStats(chatId, {
           fileType: 'animation',
           fileSize: animSize,
@@ -1174,13 +1174,13 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
         }, env);
       }
     } catch (error) {
-      console.error('处理动画时出错:', error);
+      console.error('Lỗi khi xử lý ảnh động:', error);
       let errorDetails = '';
       if (error.message) {
-        errorDetails = `\n错误详情: ${error.message}`;
+        errorDetails = `\nChi tiết lỗi: ${error.message}`;
       }
       
-      const errorMsg = `❌ 处理动画时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送GIF\n2. 尝试将动画转换为标准GIF格式`;
+      const errorMsg = `❌ Lỗi khi xử lý ảnh động.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại GIF\n2. Thử chuyển đổi ảnh động sang định dạng GIF chuẩn`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -1190,11 +1190,11 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
   } else {
     let errorDetails = '';
     if (fileInfo.error) {
-      errorDetails = `\n错误详情: ${fileInfo.error}`;
-      console.error(`获取动画文件信息失败: ${fileInfo.error}`);
+      errorDetails = `\nChi tiết lỗi: ${fileInfo.error}`;
+      console.error(`Lấy thông tin tệp ảnh động thất bại: ${fileInfo.error}`);
     }
     
-    const errorMsg = `❌ 无法获取动画信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送GIF\n2. 尝试将动画转换为标准GIF格式`;
+    const errorMsg = `❌ Không thể lấy thông tin ảnh động, vui lòng thử lại sau.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại GIF\n2. Thử chuyển đổi ảnh động sang định dạng GIF chuẩn`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -1203,28 +1203,28 @@ async function handleAnimation(message, chatId, isDocument = false, env) {
   }
 }
 
-// 处理文档上传（通用文件处理）
+// Xử lý tải lên tài liệu (xử lý tệp chung)
 async function handleDocument(message, chatId, env) {
   const fileId = message.document.file_id;
   const fileName = message.document.file_name || `file_${Date.now()}`;
   const mimeType = message.document.mime_type || 'application/octet-stream';
-  // 获取用户的文件描述作为备注
+  // Lấy mô tả tệp của người dùng để làm ghi chú
   const fileDescription = message.caption || "";
 
-  // 检查文件扩展名是否支持
+  // Kiểm tra xem phần mở rộng tệp có được hỗ trợ không
   const fileExt = fileName.split('.').pop().toLowerCase();
   const isSupported = isExtValid(fileExt);
   
-  // 从 env 获取配置
+  // Lấy cấu hình từ env
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
 
-  // 获取文件类型图标
+  // Lấy biểu tượng loại tệp
   const fileIcon = getFileIcon(fileName, mimeType);
   
-  // 发送处理中消息并获取消息ID以便后续更新
-  const sendResult = await sendMessage(chatId, `${fileIcon} 正在处理您的文件 "${fileName}"${isSupported ? '' : ' (不支持的扩展名，但仍将尝试上传)'}，请稍候...`, env);
+  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
+  const sendResult = await sendMessage(chatId, `${fileIcon} Đang xử lý tệp "${fileName}" của bạn${isSupported ? '' : ' (Phần mở rộng không được hỗ trợ, nhưng vẫn sẽ thử tải lên)'}, vui lòng đợi...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
   const fileInfo = await getFile(fileId, env);
@@ -1235,14 +1235,14 @@ async function handleDocument(message, chatId, env) {
 
     try {
       const fileResponse = await fetch(fileUrl);
-      if (!fileResponse.ok) throw new Error(`获取文件失败: ${fileResponse.status}`);
+      if (!fileResponse.ok) throw new Error(`Lấy tệp thất bại: ${fileResponse.status}`);
 
       const fileBuffer = await fileResponse.arrayBuffer();
       const fileSize = fileBuffer.byteLength;
       const fileSizeFormatted = formatFileSize(fileSize);
 
       if (fileSize / (1024 * 1024) > 20) { // 20MB
-        const warningMsg = `⚠️ 文件太大 (${fileSizeFormatted})，超出20MB限制，无法上传。`;
+        const warningMsg = `⚠️ Tệp quá lớn (${fileSizeFormatted}), vượt quá giới hạn 20MB, không thể tải lên.`;
         if (messageId) {
           await editMessage(chatId, messageId, warningMsg, env);
         } else {
@@ -1253,26 +1253,26 @@ async function handleDocument(message, chatId, env) {
 
       const formData = new FormData();
       
-      // 修复exe文件上传问题：确保文件名保持原样，不要修改扩展名
+      // Sửa lỗi tải lên tệp exe: Đảm bảo tên tệp giữ nguyên, không thay đổi phần mở rộng
       let safeFileName = fileName;
       
-      // 确保MIME类型正确
+      // Đảm bảo MIME type chính xác
       let safeMimeType = mimeType;
-      // 基于文件扩展名设置正确的MIME类型
+      // Thiết lập MIME type chính xác dựa trên phần mở rộng tệp
       if (fileExt) {
-        // 应用程序可执行文件
+        // Tệp thực thi ứng dụng
         if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage'].includes(fileExt)) {
           safeMimeType = 'application/octet-stream';
         }
-        // 移动应用程序
+        // Ứng dụng di động
         else if (['apk', 'ipa'].includes(fileExt)) {
           safeMimeType = 'application/vnd.android.package-archive';
         }
-        // 压缩文件
+        // Tệp nén
         else if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz'].includes(fileExt)) {
           safeMimeType = fileExt === 'zip' ? 'application/zip' : 'application/x-compressed';
         }
-        // 光盘镜像
+        // Ảnh đĩa
         else if (['iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf'].includes(fileExt)) {
           safeMimeType = 'application/octet-stream';
         }
@@ -1287,7 +1287,7 @@ async function handleDocument(message, chatId, env) {
         uploadUrl.searchParams.append('authCode', AUTH_CODE);
       }
 
-      console.log(`文件上传请求 URL: ${uploadUrl.toString()}`);
+      console.log(`URL yêu cầu tải tệp lên: ${uploadUrl.toString()}`);
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -1296,7 +1296,7 @@ async function handleDocument(message, chatId, env) {
       });
 
       const responseText = await uploadResponse.text();
-      console.log('文件上传原始响应:', responseText);
+      console.log('Phản hồi gốc khi tải tệp lên:', responseText);
 
       let uploadResult;
       try {
@@ -1307,48 +1307,48 @@ async function handleDocument(message, chatId, env) {
 
       const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
       const fileUrl2 = extractedResult.url;
-      // 使用提取的文件名或默认值
+      // Sử dụng tên tệp đã trích xuất hoặc giá trị mặc định
       const actualFileName = extractedResult.fileName || safeFileName;
-      // 使用上传的文件大小，而不是响应中的（如果响应中有，会在extractUrlFromResult中提取）
+      // Sử dụng kích thước tệp đã tải lên, thay vì từ phản hồi (nếu có trong phản hồi, nó sẽ được trích xuất trong extractUrlFromResult)
       const actualFileSize = extractedResult.fileSize || fileSize;
 
       if (fileUrl2) {
-        let msgText = `✅ 文件上传成功！\n\n` +
-                       `📄 文件名: ${actualFileName}\n`;
+        let msgText = `✅ Tải tệp lên thành công!\n\n` +
+                       `📄 Tên tệp: ${actualFileName}\n`;
         
-        // 如果有文件描述，添加备注信息
+        // Nếu có mô tả tệp, thêm thông tin ghi chú
         if (fileDescription) {
-          msgText += `📝 备注: ${fileDescription}\n`;
+          msgText += `📝 Ghi chú: ${fileDescription}\n`;
         }
         
-        msgText += `📦 文件大小: ${formatFileSize(actualFileSize)}\n\n` +
-                   `🔗 URL：${fileUrl2}`;
+        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
+                   `🔗 URL: ${fileUrl2}`;
         
-        // 更新之前的消息而不是发送新消息
+        // Cập nhật tin nhắn trước đó thay vì gửi tin nhắn mới
         if (messageId) {
           await editMessage(chatId, messageId, msgText, env);
         } else {
           await sendMessage(chatId, msgText, env);
         }
         
-        // 更新用户统计数据，添加备注信息
+        // Cập nhật thống kê người dùng, thêm thông tin ghi chú
         await updateUserStats(chatId, {
           fileType: 'document',
           fileSize: actualFileSize,
           success: true,
           fileName: actualFileName,
           url: fileUrl2,
-          description: fileDescription // 添加备注字段
+          description: fileDescription // Thêm trường ghi chú
         }, env);
       } else {
-        const errorMsg = `⚠️ 无法从图床获取文件链接。原始响应 (前200字符):\n${responseText.substring(0, 200)}... \n\n或者尝试Telegram临时链接 (有效期有限):\n${fileUrl}`;
+        const errorMsg = `⚠️ Không thể lấy được liên kết tệp từ kho ảnh. Phản hồi gốc (200 ký tự đầu):\n${responseText.substring(0, 200)}... \n\nHoặc thử liên kết tạm thời của Telegram (có hiệu lực hạn chế):\n${fileUrl}`;
         if (messageId) {
           await editMessage(chatId, messageId, errorMsg, env);
         } else {
           await sendMessage(chatId, errorMsg, env);
         }
         
-        // 更新失败统计
+        // Cập nhật thống kê thất bại
         await updateUserStats(chatId, {
           fileType: 'document',
           fileSize: fileSize,
@@ -1356,13 +1356,13 @@ async function handleDocument(message, chatId, env) {
         }, env);
       }
     } catch (error) {
-      console.error('处理文件时出错:', error);
+      console.error('Lỗi khi xử lý tệp:', error);
       let errorDetails = '';
       if (error.message) {
-        errorDetails = `\n错误详情: ${error.message}`;
+        errorDetails = `\nChi tiết lỗi: ${error.message}`;
       }
       
-      const errorMsg = `❌ 处理文件时出错。${errorDetails}\n\n建议尝试:\n1. 重新发送文件\n2. 如果文件较大，可以尝试压缩后再发送`;
+      const errorMsg = `❌ Lỗi khi xử lý tệp.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại tệp\n2. Nếu tệp lớn, hãy thử nén trước khi gửi`;
       if (messageId) {
         await editMessage(chatId, messageId, errorMsg, env);
       } else {
@@ -1372,11 +1372,11 @@ async function handleDocument(message, chatId, env) {
   } else {
     let errorDetails = '';
     if (fileInfo.error) {
-      errorDetails = `\n错误详情: ${fileInfo.error}`;
-      console.error(`获取文档文件信息失败: ${fileInfo.error}`);
+      errorDetails = `\nChi tiết lỗi: ${fileInfo.error}`;
+      console.error(`Lấy thông tin tệp tài liệu thất bại: ${fileInfo.error}`);
     }
     
-    const errorMsg = `❌ 无法获取文件信息，请稍后再试。${errorDetails}\n\n建议尝试:\n1. 重新发送文件\n2. 如果文件较大，可以尝试压缩后再发送`;
+    const errorMsg = `❌ Không thể lấy thông tin tệp, vui lòng thử lại sau.${errorDetails}\n\nGợi ý thử lại:\n1. Gửi lại tệp\n2. Nếu tệp lớn, hãy thử nén trước khi gửi`;
     if (messageId) {
       await editMessage(chatId, messageId, errorMsg, env);
     } else {
@@ -1385,35 +1385,35 @@ async function handleDocument(message, chatId, env) {
   }
 }
 
-// 辅助函数：从图床返回结果中提取URL，接收基础URL
+// Hàm bổ trợ: Trích xuất URL từ kết quả trả về của kho ảnh, nhận URL cơ sở
 function extractUrlFromResult(result, imgBedUrl) {
   let url = '';
   let fileName = '';
   let fileSize = 0;
   
-  // 尝试从传入的 IMG_BED_URL 获取 origin
-  let baseUrl = 'https://your.default.domain'; // 提供一个备用基础URL
+  // Thử lấy origin từ IMG_BED_URL truyền vào
+  let baseUrl = 'https://your.default.domain'; // Cung cấp một URL cơ sở dự phòng
   try {
     if (imgBedUrl && (imgBedUrl.startsWith('https://') || imgBedUrl.startsWith('http://'))) {
       baseUrl = new URL(imgBedUrl).origin;
     }
   } catch (e) {
-    console.error("无法解析 IMG_BED_URL:", imgBedUrl, e);
+    console.error("Không thể phân tích IMG_BED_URL:", imgBedUrl, e);
   }
 
-  console.log("提取URL，结果类型:", typeof result, "值:", JSON.stringify(result).substring(0, 200));
+  console.log("Trích xuất URL, loại kết quả:", typeof result, "Giá trị:", JSON.stringify(result).substring(0, 200));
 
-  // 处理可能的错误响应
+  // Xử lý các phản hồi lỗi có thể xảy ra
   if (typeof result === 'string' && result.includes("The string did not match the expected pattern")) {
-    console.error("遇到模式匹配错误，可能是文件扩展名问题");
-    // 尝试从错误响应中提取可能的URL
+    console.error("Gặp lỗi khớp mẫu, có thể do phần mở rộng tệp");
+    // Thử trích xuất URL có thể có từ phản hồi lỗi
     const urlMatch = result.match(/(https?:\/\/[^\s"]+)/);
     if (urlMatch) {
       return { url: urlMatch[0], fileName: '', fileSize: 0 };
     }
   }
 
-  // 优先处理 [{"src": "/file/path.jpg"}] 这样的响应格式
+  // Ưu tiên xử lý định dạng phản hồi như [{"src": "/file/path.jpg"}]
   if (Array.isArray(result) && result.length > 0) {
     const item = result[0];
     if (item.url) {
@@ -1421,7 +1421,7 @@ function extractUrlFromResult(result, imgBedUrl) {
       fileName = item.fileName || extractFileName(url);
       fileSize = item.fileSize || 0;
     } else if (item.src) {
-      // 特别处理以 /file/ 开头的路径
+      // Xử lý đặc biệt cho các đường dẫn bắt đầu bằng /file/
       if (item.src.startsWith('/file/')) {
         url = `${baseUrl}${item.src}`;
         fileName = extractFileName(item.src);
@@ -1479,93 +1479,93 @@ function extractUrlFromResult(result, imgBedUrl) {
     }
   }
 
-  console.log("提取的最终URL:", url);
+  console.log("URL cuối cùng đã trích xuất:", url);
   return { url, fileName, fileSize };
 }
 
-// 辅助函数：从URL中提取文件名
+// Hàm bổ trợ: Trích xuất tên tệp từ URL
 function extractFileName(url) {
   if (!url) return '';
   
-  // 先尝试取最后的部分
+  // Thử lấy phần cuối cùng
   let parts = url.split('/');
   let fileName = parts[parts.length - 1];
   
-  // 如果有查询参数，去掉查询参数
+  // Nếu có tham số truy vấn, loại bỏ tham số truy vấn
   fileName = fileName.split('?')[0];
   
-  // 如果没有扩展名，尝试基于URL结构猜测
+  // Nếu không có phần mở rộng, thử đoán dựa trên cấu trúc URL
   if (!fileName.includes('.') && url.includes('/file/')) {
     fileName = url.split('/file/')[1].split('?')[0];
-    // 如果还是没有扩展名，可能需要基于内容类型添加一个默认扩展名
+    // Nếu vẫn không có phần mở rộng, có thể cần thêm một phần mở rộng mặc định dựa trên loại nội dung
     if (!fileName.includes('.')) {
-      // 由于没有内容类型信息，暂时不添加扩展名
+      // Vì không có thông tin loại nội dung, tạm thời không thêm phần mở rộng
     }
   }
   
-  return fileName || '未知文件';
+  return fileName || 'Tệp không xác định';
 }
 
-// getFile 函数，接收 env 对象
+// Hàm getFile, nhận đối tượng env
 async function getFile(fileId, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
+  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // Xây dựng URL API
   
-  // 添加重试逻辑
+  // Thêm logic thử lại
   let retries = 0;
   const maxRetries = 3;
   let lastError = null;
   
   while (retries < maxRetries) {
     try {
-      console.log(`尝试获取文件信息，fileId: ${fileId.substring(0, 10)}...，第${retries + 1}次尝试`);
+      console.log(`Đang thử lấy thông tin tệp, fileId: ${fileId.substring(0, 10)}..., thử lần thứ ${retries + 1}`);
       const response = await fetch(`${API_URL}/getFile?file_id=${fileId}`);
       
       if (!response.ok) {
-        throw new Error(`Telegram API返回错误: ${response.status} ${response.statusText}`);
+        throw new Error(`Telegram API trả về lỗi: ${response.status} ${response.statusText}`);
       }
       
       const result = await response.json();
       
       if (!result.ok) {
-        throw new Error(`Telegram API返回非成功结果: ${JSON.stringify(result)}`);
+        throw new Error(`Telegram API trả về kết quả không thành công: ${JSON.stringify(result)}`);
       }
       
       if (!result.result || !result.result.file_path) {
-        throw new Error(`Telegram API返回结果缺少file_path: ${JSON.stringify(result)}`);
+        throw new Error(`Telegram API trả về kết quả thiếu file_path: ${JSON.stringify(result)}`);
       }
       
       return result;
     } catch (error) {
       lastError = error;
-      console.error(`获取文件信息失败，第${retries + 1}次尝试: ${error.message}`);
+      console.error(`Lấy thông tin tệp thất bại, thử lần thứ ${retries + 1}: ${error.message}`);
       retries++;
       
       if (retries < maxRetries) {
-        // 等待时间随重试次数增加
-        const waitTime = 1000 * retries; // 1秒, 2秒, 3秒...
-        console.log(`等待${waitTime / 1000}秒后重试...`);
+        // Thời gian chờ tăng dần theo số lần thử lại
+        const waitTime = 1000 * retries; // 1 giây, 2 giây, 3 giây...
+        console.log(`Đợi ${waitTime / 1000} giây trước khi thử lại...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
     }
   }
   
-  console.error(`获取文件信息失败，已达到最大重试次数(${maxRetries}): ${lastError.message}`);
-  return { ok: false, error: `获取文件信息失败: ${lastError.message}` };
+  console.error(`Lấy thông tin tệp thất bại, đã đạt số lần thử tối đa (${maxRetries}): ${lastError.message}`);
+  return { ok: false, error: `Lấy thông tin tệp thất bại: ${lastError.message}` };
 }
 
-// sendMessage 函数，接收 env 对象
+// Hàm sendMessage, nhận đối tượng env
 async function sendMessage(chatId, text, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
   
-  // 确保BOT_TOKEN可用
+  // Đảm bảo BOT_TOKEN có sẵn
   if (!BOT_TOKEN) {
-    console.error("sendMessage: BOT_TOKEN不可用");
+    console.error("sendMessage: BOT_TOKEN không khả dụng");
     return { ok: false, error: "BOT_TOKEN not available" };
   }
   
   const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
-  console.log(`准备发送消息到聊天ID: ${chatId}, API URL: ${API_URL.substring(0, 40)}...`);
+  console.log(`Sẵn sàng gửi tin nhắn tới Chat ID: ${chatId}, URL API: ${API_URL.substring(0, 40)}...`);
   
   try {
     const body = JSON.stringify({
@@ -1574,7 +1574,7 @@ async function sendMessage(chatId, text, env) {
       parse_mode: 'HTML',
     });
     
-    console.log(`请求体: ${body.substring(0, 50)}...`);
+    console.log(`Nội dung yêu cầu: ${body.substring(0, 50)}...`);
     
     const response = await fetch(`${API_URL}/sendMessage`, {
       method: 'POST',
@@ -1584,23 +1584,23 @@ async function sendMessage(chatId, text, env) {
       body: body,
     });
     
-    console.log(`Telegram API响应状态: ${response.status}`);
+    console.log(`Trạng thái phản hồi Telegram API: ${response.status}`);
     const responseData = await response.json();
-    console.log(`Telegram API响应数据: ${JSON.stringify(responseData).substring(0, 100)}...`);
+    console.log(`Dữ liệu phản hồi Telegram API: ${JSON.stringify(responseData).substring(0, 100)}...`);
     
     return responseData;
   } catch (error) {
-    console.error(`发送消息错误: ${error}`);
+    console.error(`Lỗi gửi tin nhắn: ${error}`);
     return { ok: false, error: error.message };
   }
 }
 
-// editMessage 函数，用于更新已发送的消息
+// Hàm editMessage, dùng để cập nhật tin nhắn đã gửi
 async function editMessage(chatId, messageId, text, env) {
   if (!messageId) return null;
   
   const BOT_TOKEN = env.BOT_TOKEN;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // 构建API URL
+  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // Xây dựng URL API
   
   try {
     const response = await fetch(`${API_URL}/editMessageText`, {
@@ -1617,13 +1617,13 @@ async function editMessage(chatId, messageId, text, env) {
     });
     return await response.json();
   } catch (error) {
-    console.error('编辑消息失败:', error);
-    // 如果编辑失败，尝试发送新消息
+    console.error('Cập nhật tin nhắn thất bại:', error);
+    // Nếu cập nhật thất bại, thử gửi tin nhắn mới
     return sendMessage(chatId, text, env);
   }
 }
 
-// 获取文件类型图标
+// Lấy biểu tượng loại tệp
 function getFileIcon(filename, mimeType) {
   if (mimeType) {
     if (mimeType.startsWith('image/')) return '🖼️';
@@ -1642,89 +1642,89 @@ function getFileIcon(filename, mimeType) {
   if (filename) {
     const ext = filename.split('.').pop().toLowerCase();
     
-    // 检查扩展名是否在支持列表中
+    // Kiểm tra phần mở rộng có trong danh sách hỗ trợ không
     if (isExtValid(ext)) {
-      // 图片文件
+      // Tệp hình ảnh
       if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'tiff', 'tif', 'ico', 'heic', 'heif', 'avif', 'raw', 'arw', 'cr2', 'nef', 'orf', 'rw2', 'dng', 'raf'].includes(ext)) {
         return '🖼️';
       }
       
-      // 视频文件
+      // Tệp video
       if (['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm', 'm4v', '3gp', 'mpeg', 'mpg', 'mpe', 'ts', 'rmvb', 'rm', 'asf', 'amv', 'mts', 'm2ts', 'vob', 'divx', 'tp', 'ogm', 'ogv'].includes(ext)) {
         return '🎬';
       }
       
-      // 音频文件
+      // Tệp âm thanh
       if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'opus', 'mid', 'midi', 'ape', 'ra', 'amr', 'au', 'voc', 'ac3', 'dsf', 'dsd', 'dts', 'dtsma', 'ast', 'aiff', 'aifc', 'spx', 'gsm', 'wv', 'tta', 'mpc', 'tak'].includes(ext)) {
         return '🎵';
       }
       
-      // 电子书和文档文件
+      // Tệp ebook và tài liệu
       if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'rtf', 'md', 'csv', 'json', 'xml', 'epub', 'mobi', 'azw', 'azw3', 'fb2', 'djvu', 'cbz', 'cbr', 'lit', 'lrf', 'opf', 'prc', 'azw1', 'azw4', 'azw6', 'cb7', 'cbt', 'cba', 'chm', 'xps', 'oxps', 'ps', 'dvi'].includes(ext)) {
         return '📝';
       }
       
-      // 压缩文件
+      // Tệp nén
       if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz', 'z', 'lz', 'lzma', 'lzo', 'rz', 'sfx', 'cab', 'arj', 'lha', 'lzh', 'zoo', 'arc', 'ace', 'dgc', 'dgn', 'lbr', 'pak', 'pit', 'sit', 'sqx'].includes(ext)) {
         return '🗜️';
       }
       
-      // 可执行文件和系统镜像
+      // Tệp thực thi và ứng dụng hệ thống
       if (['exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage', 'apk', 'ipa'].includes(ext)) {
         return '⚙️';
       }
       
-      // 光盘镜像
+      // Ảnh đĩa (Disk image)
       if (['iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf'].includes(ext)) {
         return '💿';
       }
       
-      // 小众图像格式
+      // Các định dạng ảnh ít phổ biến hơn
       if (['tiff', 'tif', 'bmp', 'pcx', 'tga', 'icns', 'heic', 'heif', 'arw', 'cr2', 'nef', 'orf', 'rw2', 'dng', 'raf', 'raw'].includes(ext)) {
         return '🖼️';
       }
       
-      // 小众档案格式
+      // Các định dạng lưu trữ ít phổ biến hơn
       if (['z', 'lz', 'lzma', 'lzo', 'rz', 'sfx', 'cab', 'arj', 'lha', 'lzh', 'zoo', 'arc', 'ace', 'dgc', 'dgn', 'lbr', 'pak', 'pit', 'sit', 'sqx', 'gz.gpg', 'z.gpg'].includes(ext)) {
         return '🗜️';
       }
       
-      // 小众视频格式
+      // Các định dạng video ít phổ biến hơn
       if (['rmvb', 'rm', 'asf', 'amv', 'mts', 'm2ts', 'vob', 'divx', 'mpeg', 'mpg', 'mpe', 'tp', 'ts', 'ogm', 'ogv'].includes(ext)) {
         return '🎬';
       }
       
-      // 小众音频格式
+      // Các định dạng âm thanh ít phổ biến hơn
       if (['ape', 'wma', 'ra', 'amr', 'au', 'voc', 'ac3', 'dsf', 'dsd', 'dts', 'dtsma', 'ast', 'aiff', 'aifc', 'spx', 'gsm', 'wv', 'tta', 'mpc', 'tak'].includes(ext)) {
         return '🎵';
       }
       
-      // 小众电子书和文档格式
+      // Các định dạng ebook và tài liệu ít phổ biến hơn
       if (['lit', 'lrf', 'opf', 'prc', 'azw1', 'azw4', 'azw6', 'cbz', 'cbr', 'cb7', 'cbt', 'cba', 'chm', 'xps', 'oxps', 'ps', 'dvi'].includes(ext)) {
         return '📝';
       }
       
-      // 小众开发和数据格式
+      // Các định dạng phát triển và dữ liệu ít phổ biến hơn
       if (['wasm', 'wat', 'f', 'for', 'f90', 'f95', 'hs', 'lhs', 'elm', 'clj', 'csv', 'tsv', 'parquet', 'avro', 'proto', 'pbtxt', 'fbs'].includes(ext)) {
         return '📄';
       }
       
-      // 3D和游戏相关格式
+      // Các định dạng liên quan đến 3D và trò chơi
       if (['obj', 'fbx', 'dae', '3ds', 'stl', 'gltf', 'glb', 'blend', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds'].includes(ext)) {
         return '🎨';
       }
       
-      // 科学和专业格式
+      // Các định dạng khoa học và chuyên dụng
       if (['mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots'].includes(ext)) {
         return '📊';
       }
     }
   }
   
-  return '📄'; // 默认文件图标
+  return '📄'; // Biểu tượng tệp mặc định
 }
 
-// 格式化文件大小
+// Định dạng kích thước tệp
 function formatFileSize(bytes, decimals = 2) {
   if (bytes === 0) return '0 Bytes';
   
@@ -1737,97 +1737,97 @@ function formatFileSize(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-// 检查文件扩展名是否在支持列表中
+// Kiểm tra xem phần mở rộng tệp có trong danh sách hỗ trợ không
 function isExtValid(fileExt) {
   return ['jpeg', 'jpg', 'png', 'gif', 'webp', 
     'mp4', 'mp3', 'ogg',
     'mp3', 'wav', 'flac', 'aac', 'opus',
     'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'pdf', 
     'txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'ts', 'go', 'java', 'php', 'py', 'rb', 'sh', 'bat', 'cmd', 'ps1', 'psm1', 'psd', 'ai', 'sketch', 'fig', 'svg', 'eps', 
-    // 压缩包格式
+    // Các định dạng nén
     'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz',
-    // 应用程序包
+    // Gói ứng dụng
     'apk', 'ipa', 'exe', 'msi', 'dmg', 'pkg', 'deb', 'rpm', 'snap', 'flatpak', 'appimage',
-    // 光盘镜像
+    // Ảnh đĩa (Disk image)
     'iso', 'img', 'vdi', 'vmdk', 'vhd', 'vhdx', 'ova', 'ovf',
-    // 文档格式
+    // Định dạng tài liệu
     'epub', 'mobi', 'azw', 'azw3', 'fb2', 'djvu', 'cbz', 'cbr',
-    // 字体
+    // Font
     'ttf', 'otf', 'woff', 'woff2', 'eot', 
-    // 其他文件格式
+    // Các định dạng tệp khác
     'torrent', 'ico', 'crx', 'xpi', 'jar', 'war', 'ear',
     'qcow2', 'pvm', 'dsk', 'hdd', 'bin', 'cue', 'mds', 'mdf', 'nrg', 'ccd', 'cif', 'c2d', 'daa', 'b6t', 'b5t', 'bwt', 'isz', 'cdi', 'flp', 'uif', 'xdi', 'sdi',
-    // 源代码文件
+    // Tệp mã nguồn
     'c', 'cpp', 'h', 'hpp', 'cs', 'swift', 'kt', 'rs', 'dart', 'lua', 'groovy', 'scala', 'perl', 'r', 'vbs', 'sql', 'yaml', 'yml', 'toml',
-    // 视频和音频相关
+    // Liên quan đến video và âm thanh
     'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', '3gp', 'm4v', 'm4a', 'mid', 'midi',
-    // 小众图像格式
+    // Các định dạng ảnh ít phổ biến
     'tiff', 'tif', 'bmp', 'pcx', 'tga', 'icns', 'heic', 'heif', 'arw', 'cr2', 'nef', 'orf', 'rw2', 'dng', 'raf', 'raw',
-    // 小众档案格式
+    // Các định dạng nén ít phổ biến
     'z', 'lz', 'lzma', 'lzo', 'rz', 'sfx', 'cab', 'arj', 'lha', 'lzh', 'zoo', 'arc', 'ace', 'dgc', 'dgn', 'lbr', 'pak', 'pit', 'sit', 'sqx', 'gz.gpg', 'z.gpg',
-    // 小众视频格式
+    // Các định dạng video ít phổ biến
     'rmvb', 'rm', 'asf', 'amv', 'mts', 'm2ts', 'vob', 'divx', 'mpeg', 'mpg', 'mpe', 'tp', 'ts', 'ogm', 'ogv', 
-    // 小众音频格式
+    // Các định dạng âm thanh ít phổ biến
     'ape', 'wma', 'ra', 'amr', 'au', 'voc', 'ac3', 'dsf', 'dsd', 'dts', 'dtsma', 'ast', 'aiff', 'aifc', 'spx', 'gsm', 'wv', 'tta', 'mpc', 'tak',
-    // 小众电子书和文档格式
+    // Các định dạng ebook và tài liệu ít phổ biến
     'lit', 'lrf', 'opf', 'prc', 'azw1', 'azw4', 'azw6', 'cbz', 'cbr', 'cb7', 'cbt', 'cba', 'chm', 'xps', 'oxps', 'ps', 'dvi',
-    // 小众开发和数据格式
+    // Các định dạng phát triển và dữ liệu ít phổ biến
     'wasm', 'wat', 'f', 'for', 'f90', 'f95', 'hs', 'lhs', 'elm', 'clj', 'csv', 'tsv', 'parquet', 'avro', 'proto', 'pbtxt', 'fbs',
-    // 3D和游戏相关格式
+    // Định dạng liên quan đến 3D và trò chơi
     'obj', 'fbx', 'dae', '3ds', 'stl', 'gltf', 'glb', 'blend', 'mb', 'unity3d', 'unitypackage', 'max', 'c4d', 'w3x', 'pk3', 'wad', 'bsp', 'map', 'rom', 'n64', 'z64', 'v64', 'nes', 'smc', 'sfc', 'gb', 'gbc', 'gba', 'nds',
-    // 科学和专业格式
+    // Các định dạng khoa học và chuyên dụng
     'mat', 'fits', 'hdf', 'hdf5', 'h5', 'nx', 'ngc', 'nxs', 'nb', 'cdf', 'nc', 'spss', 'sav', 'dta', 'do', 'odb', 'odt', 'ott', 'odp', 'otp', 'ods', 'ots'
   ].includes(fileExt.toLowerCase());
 }
 
-// 更新用户统计数据
+// Cập nhật thống kê người dùng
 async function updateUserStats(chatId, data, env) {
   try {
     if (!env.STATS_STORAGE) {
-      console.log("KV存储未配置，跳过统计更新");
+      console.log("KV Storage chưa cấu hình, bỏ qua cập nhật thống kê");
       return;
     }
     
     const statsKey = `user_stats_${chatId}`;
     const userStats = await getUserStats(chatId, env);
     
-    // 更新总上传数据
+    // Cập nhật tổng dữ liệu tải lên
     userStats.totalUploads += 1;
     
-    // 更新文件类型计数
+    // Cập nhật bộ đếm loại tệp
     const fileType = data.fileType || 'other';
     userStats.fileTypes[fileType] = (userStats.fileTypes[fileType] || 0) + 1;
     
-    // 更新总大小
+    // Cập nhật tổng kích thước
     if (data.fileSize) {
       userStats.totalSize += data.fileSize;
     }
     
-    // 更新成功/失败计数
+    // Cập nhật số lượng thành công/thất bại
     if (data.success) {
       userStats.successfulUploads += 1;
       
-      // 如果上传成功，添加到历史记录
+      // Nếu tải lên thành công, thêm vào lịch sử
       if (!userStats.uploadHistory) {
         userStats.uploadHistory = [];
       }
       
-      // 创建历史记录条目
+      // Tạo mục lịch sử mới
       const historyEntry = {
-        id: Date.now().toString(), // 使用时间戳作为唯一ID
+        id: Date.now().toString(), // Sử dụng timestamp làm ID duy nhất
         timestamp: getChineseISOString(),
         fileName: data.fileName || `file_${Date.now()}`,
         fileType: fileType,
         fileSize: data.fileSize || 0,
         url: data.url || '',
         thumbnailUrl: data.thumbnailUrl || '',
-        description: data.description || '' // 添加备注字段
+        description: data.description || '' // Thêm trường ghi chú
       };
       
-      // 添加到历史记录，保持最新的记录在前面
+      // Thêm vào lịch sử, giữ bản ghi mới nhất ở đầu
       userStats.uploadHistory.unshift(historyEntry);
       
-      // 限制历史记录大小，最多保存100条
+      // Giới hạn kích thước lịch sử, tối đa 100 bản ghi
       if (userStats.uploadHistory.length > 100) {
         userStats.uploadHistory = userStats.uploadHistory.slice(0, 100);
       }
@@ -1835,11 +1835,11 @@ async function updateUserStats(chatId, data, env) {
       userStats.failedUploads += 1;
     }
     
-    // 更新时间记录
+    // Cập nhật bản ghi thời gian
     const now = getCurrentChineseTime();
     const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
     
-    // 日报告
+    // Báo cáo hàng ngày
     if (!userStats.dailyData[todayStr]) {
       userStats.dailyData[todayStr] = {
         uploads: 0,
@@ -1856,7 +1856,7 @@ async function updateUserStats(chatId, data, env) {
       userStats.dailyData[todayStr].failed += 1;
     }
     
-    // 限制dailyData大小，保留最近60天的数据
+    // Giới hạn kích thước dailyData, giữ lại dữ liệu 60 ngày gần nhất
     const dailyKeys = Object.keys(userStats.dailyData).sort();
     if (dailyKeys.length > 60) {
       const keysToRemove = dailyKeys.slice(0, dailyKeys.length - 60);
@@ -1865,19 +1865,19 @@ async function updateUserStats(chatId, data, env) {
       });
     }
     
-    // 保存更新后的统计数据
+    // Lưu dữ liệu thống kê đã cập nhật
     await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
-    console.log(`已更新用户${chatId}的统计数据`);
+    console.log(`Đã cập nhật dữ liệu thống kê cho người dùng ${chatId}`);
   } catch (error) {
-    console.error(`更新用户统计数据时出错:`, error);
+    console.error(`Lỗi khi cập nhật dữ liệu thống kê người dùng:`, error);
   }
 }
 
-// 获取用户统计数据
+// Lấy dữ liệu thống kê người dùng
 async function getUserStats(chatId, env) {
   try {
     if (!env.STATS_STORAGE) {
-      console.log("KV存储未配置，返回空统计");
+      console.log("KV Storage chưa được cấu hình, trả về thống kê trống");
       return createEmptyStats();
     }
     
@@ -1890,12 +1890,12 @@ async function getUserStats(chatId, env) {
     
     return JSON.parse(storedStats);
   } catch (error) {
-    console.error(`获取用户统计数据时出错:`, error);
+    console.error(`Lỗi khi lấy dữ liệu thống kê người dùng:`, error);
     return createEmptyStats();
   }
 }
 
-// 创建空的统计数据结构
+// Tạo cấu trúc dữ liệu thống kê trống
 function createEmptyStats() {
   return {
     totalUploads: 0,
@@ -1905,15 +1905,15 @@ function createEmptyStats() {
     fileTypes: {},
     dailyData: {},
     createdAt: getChineseISOString(),
-    uploadHistory: [] // 添加上传历史数组
+    uploadHistory: [] // Thêm mảng lịch sử tải lên
   };
 }
 
-// 获取用户报告
+// Lấy báo cáo người dùng
 async function getUserReport(chatId, period, env) {
   const stats = await getUserStats(chatId, env);
   
-  // 获取当前东八区日期
+  // Lấy ngày hiện tại (múi giờ UTC+8)
   const now = getCurrentChineseTime();
   const report = {
     period: period,
@@ -1921,18 +1921,16 @@ async function getUserReport(chatId, period, env) {
   };
   
   if (period === 'daily') {
-    // 日报表只返回今天的数据
-    // 确保使用东八区日期
+    // Báo cáo ngày chỉ trả về dữ liệu hôm nay
     const todayStr = now.toISOString().split('T')[0];
     if (stats.dailyData[todayStr]) {
       report.data[todayStr] = stats.dailyData[todayStr];
     }
   } else if (period === 'weekly') {
-    // 周报表返回过去7天的数据
+    // Báo cáo tuần trả về dữ liệu 7 ngày qua
     for (let i = 0; i < 7; i++) {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
-      // 确保使用东八区日期
       const chinaDate = toChineseTime(date);
       const dateStr = chinaDate.toISOString().split('T')[0];
       
@@ -1941,11 +1939,10 @@ async function getUserReport(chatId, period, env) {
       }
     }
   } else {
-    // 月报表返回过去30天的数据
+    // Báo cáo tháng trả về dữ liệu 30 ngày qua
     for (let i = 0; i < 30; i++) {
       const date = new Date(now);
       date.setDate(date.getDate() - i);
-      // 确保使用东八区日期
       const chinaDate = toChineseTime(date);
       const dateStr = chinaDate.toISOString().split('T')[0];
       
@@ -1958,71 +1955,71 @@ async function getUserReport(chatId, period, env) {
   return report;
 }
 
-// 格式化统计消息
+// Định dạng tin nhắn thống kê
 function formatStatsMessage(stats) {
-  let message = `📊 *用户统计信息* 📊\n\n`;
+  let message = `📊 *Thông tin thống kê người dùng* 📊\n\n`;
   
-  message += `📤 *总上传文件*: ${stats.totalUploads} 个文件\n`;
-  message += `📦 *总存储空间*: ${formatFileSize(stats.totalSize)}\n`;
-  message += `✅ *成功上传*: ${stats.successfulUploads} 个文件\n`;
-  message += `❌ *失败上传*: ${stats.failedUploads} 个文件\n\n`;
+  message += `📤 *Tổng số tệp đã tải lên*: ${stats.totalUploads} tệp\n`;
+  message += `📦 *Tổng dung lượng lưu trữ*: ${formatFileSize(stats.totalSize)}\n`;
+  message += `✅ *Tải lên thành công*: ${stats.successfulUploads} tệp\n`;
+  message += `❌ *Tải lên thất bại*: ${stats.failedUploads} tệp\n\n`;
   
-  // 计算成功率
+  // Tính tỷ lệ thành công
   const successRate = stats.totalUploads > 0 
     ? Math.round((stats.successfulUploads / stats.totalUploads) * 100) 
     : 0;
   
-  message += `📈 *上传成功率*: ${successRate}%\n\n`;
+  message += `📈 *Tỷ lệ thành công*: ${successRate}%\n\n`;
   
-  // 文件类型统计
-  message += `*文件类型分布*:\n`;
+  // Thống kê theo loại tệp
+  message += `*Phân bố theo loại tệp*:\n`;
   for (const [type, count] of Object.entries(stats.fileTypes)) {
     const icon = type === 'image' ? '🖼️' : 
                 type === 'video' ? '🎬' : 
                 type === 'audio' ? '🎵' : 
                 type === 'animation' ? '🎞️' : 
                 type === 'document' ? '📄' : '📁';
-    
-    message += `${icon} ${type}: ${count} 个文件\n`;
+    message += `${icon} ${type}: ${count} tệp\n`;
   }
   
   return message;
 }
 
-// 格式化存储消息
+// Định dạng tin nhắn lưu trữ
 function formatStorageMessage(stats) {
-  let message = `📊 *存储使用情况* 📊\n\n`;
+  let message = `📊 *Tình trạng lưu trữ* 📊\n\n`;
   
-  message += `📦 *总存储空间*: ${formatFileSize(stats.totalSize)}\n\n`;
+  message += `📦 *Tổng dung lượng đã dùng*: ${formatFileSize(stats.totalSize)}\n\n`;
   
   // 基于文件类型的存储分布
-  message += `*存储空间分布*:\n`;
+  message += `*Phân bổ không gian lưu trữ*:\n`;
   
   // 遍历dailyData计算每种文件类型的总大小
   // 由于现在无法直接追踪每种类型的大小，这里只能显示总体情况
   
   // 计算平均文件大小
+  // Tính kích thước tệp trung bình
   const avgFileSize = stats.totalUploads > 0 
     ? stats.totalSize / stats.totalUploads 
     : 0;
   
-  message += `📊 *平均文件大小*: ${formatFileSize(avgFileSize)}\n\n`;
+  message += `📊 *Kích thước tệp trung bình*: ${formatFileSize(avgFileSize)}\n\n`;
   
-  // 添加使用趋势
-  message += `📈 *存储使用趋势*:\n`;
-  message += `使用 /report 命令查看详细的使用报告\n`;
+  // Thêm xu hướng sử dụng
+  message += `📈 *Xu hướng lưu trữ*:\n`;
+  message += `Sử dụng lệnh /report để xem báo cáo chi tiết\n`;
   
   return message;
 }
 
-// 格式化报告消息
+// Định dạng tin nhắn báo cáo
 function formatReportMessage(report, period) {
-  const periodName = period === 'daily' ? '日' : 
-                   period === 'weekly' ? '周' : '月';
+  const periodName = period === 'daily' ? 'Ngày' : 
+                    period === 'weekly' ? 'Tuần' : 'Tháng';
   
-  let message = `📊 *${periodName}度报告* 📊\n\n`;
+  let message = `📊 *Báo cáo theo ${periodName}* 📊\n\n`;
   
-  // 计算总计
+  // Tính toán tổng cộng
   let totalUploads = 0;
   let totalSize = 0;
   let totalSuccessful = 0;
@@ -2035,95 +2032,94 @@ function formatReportMessage(report, period) {
     totalFailed += data.failed || 0;
   }
   
-  message += `📤 *总上传文件*: ${totalUploads} 个文件\n`;
-  message += `📦 *总存储空间*: ${formatFileSize(totalSize)}\n`;
-  message += `✅ *成功上传*: ${totalSuccessful} 个文件\n`;
-  message += `❌ *失败上传*: ${totalFailed} 个文件\n\n`;
+  message += `📤 *Tổng số tệp tải lên*: ${totalUploads} tệp\n`;
+  message += `📦 *Tổng dung lượng*: ${formatFileSize(totalSize)}\n`;
+  message += `✅ *Thành công*: ${totalSuccessful} tệp\n`;
+  message += `❌ *Thất bại*: ${totalFailed} tệp\n\n`;
   
-  // 每日/每周/每月数据
-  message += `*${periodName}度数据明细*:\n`;
+  // Chi tiết theo ngày/tuần/tháng
+  message += `*Chi tiết dữ liệu ${periodName}*:\n`;
   
-  // 按日期排序
+  // Sắp xếp theo ngày
   const sortedDates = Object.keys(report.data).sort();
   
   for (const date of sortedDates) {
     const data = report.data[date];
-    message += `📅 ${date}: ${data.uploads || 0} 个文件, ${formatFileSize(data.size || 0)}\n`;
+    message += `📅 ${date}: ${data.uploads || 0} tệp, ${formatFileSize(data.size || 0)}\n`;
   }
   
   return message;
 }
 
-// 格式化成功率消息
+// Định dạng tin nhắn tỷ lệ thành công
 function formatSuccessRateMessage(stats) {
-  let message = `📊 *上传成功率分析* 📊\n\n`;
+  let message = `📊 *Phân tích tỷ lệ thành công* 📊\n\n`;
   
-  // 计算总体成功率
+  // Tính tỷ lệ thành công tổng thể
   const successRate = stats.totalUploads > 0 
     ? Math.round((stats.successfulUploads / stats.totalUploads) * 100) 
     : 0;
   
-  message += `✅ *总体成功率*: ${successRate}%\n`;
-  message += `📤 *总上传*: ${stats.totalUploads} 个文件\n`;
-  message += `✓ *成功上传*: ${stats.successfulUploads} 个文件\n`;
-  message += `✗ *失败上传*: ${stats.failedUploads} 个文件\n\n`;
+  message += `✅ *Tỷ lệ thành công tổng thể*: ${successRate}%\n`;
+  message += `📤 *Tổng lượt tải lên*: ${stats.totalUploads} tệp\n`;
+  message += `✓ *Thành công*: ${stats.successfulUploads} tệp\n`;
+  message += `✗ *Thất bại*: ${stats.failedUploads} tệp\n\n`;
   
-  // 按文件类型的成功率
-  message += `*各文件类型成功率*:\n`;
+  // Tỷ lệ thành công theo loại tệp
+  message += `*Số lượng theo loại tệp*:\n`;
   for (const [type, count] of Object.entries(stats.fileTypes)) {
-    // 由于我们没有按类型跟踪成功/失败，这里只显示总数
+    // Vì chúng tôi không theo dõi thành công/thất bại theo từng loại, nên ở đây chúng tôi chỉ hiển thị tổng số.
     const icon = type === 'image' ? '🖼️' : 
                type === 'video' ? '🎬' : 
                type === 'audio' ? '🎵' : 
                type === 'animation' ? '🎞️' : 
                type === 'document' ? '📄' : '📁';
-    
-    message += `${icon} ${type}: ${count} 个文件\n`;
+    message += `${icon} ${type}: ${count} tệp\n`;
   }
   
-  // 添加时间趋势
-  message += `\n📈 *使用频率*:\n`;
-  message += `使用 /report 命令查看详细的使用报告\n`;
+  // Thêm xu hướng thời gian
+  message += `\n📈 *Tần suất sử dụng*:\n`;
+  message += `Sử dụng lệnh /report để xem báo cáo chi tiết\n`;
   
   return message;
 }
 
-// 处理历史命令
+// Xử lý lệnh lịch sử
 async function handleHistoryCommand(chatId, page, fileType, searchQuery, descQuery, env) {
   try {
-    // 每页显示的记录数
+    // Số bản ghi hiển thị trên mỗi trang
     const ITEMS_PER_PAGE = 5;
     
-    // 获取用户统计数据
+    // Lấy dữ liệu thống kê người dùng
     const userStats = await getUserStats(chatId, env);
     
-    // 检查是否有上传历史
+    // Kiểm tra xem có lịch sử tải lên không
     if (!userStats.uploadHistory || userStats.uploadHistory.length === 0) {
-      await sendMessage(chatId, "📂 您还没有上传过任何文件。", env);
+      await sendMessage(chatId, "📂 Bạn chưa tải lên bất kỳ tệp nào.", env);
       return;
     }
     
-    // 检查是否是删除请求
+    // Kiểm tra xem có phải yêu cầu xóa không
     const args = fileType ? fileType.split('_') : [];
     if (args.length > 0 && args[0] === 'delete' && args[1]) {
-      // 处理删除请求
+      // Xử lý yêu cầu xóa
       const recordId = args[1];
       await handleDeleteHistoryRecord(chatId, recordId, env);
       return;
     }
     
-    // 根据文件类型过滤历史记录
+    // Lọc lịch sử theo loại tệp
     let filteredHistory = userStats.uploadHistory;
     if (fileType && !fileType.startsWith('delete_')) {
       filteredHistory = filteredHistory.filter(entry => entry.fileType === fileType);
       
       if (filteredHistory.length === 0) {
-        await sendMessage(chatId, `📂 没有找到类型为 ${fileType} 的上传记录。`, env);
+        await sendMessage(chatId, `📂 Không tìm thấy bản ghi tải lên loại ${fileType}.`, env);
         return;
       }
     }
     
-    // 搜索功能：根据关键词过滤（包括文件名和备注）
+    // Chức năng tìm kiếm: Lọc theo từ khóa (bao gồm tên tệp và ghi chú)
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filteredHistory = filteredHistory.filter(entry => 
@@ -2132,12 +2128,12 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, descQue
       );
       
       if (filteredHistory.length === 0) {
-        await sendMessage(chatId, `📂 没有找到包含关键词 "${searchQuery}" 的上传记录。`, env);
+        await sendMessage(chatId, `📂 Không tìm thấy bản ghi nào chứa từ khóa "${searchQuery}".`, env);
         return;
       }
     }
     
-    // 备注搜索功能：根据备注关键词过滤
+    // Chức năng tìm kiếm ghi chú: Lọc theo từ khóa ghi chú
     if (descQuery) {
       const descQueryLower = descQuery.toLowerCase();
       filteredHistory = filteredHistory.filter(entry => 
@@ -2145,90 +2141,90 @@ async function handleHistoryCommand(chatId, page, fileType, searchQuery, descQue
       );
       
       if (filteredHistory.length === 0) {
-        await sendMessage(chatId, `📂 没有找到包含备注关键词 "${descQuery}" 的上传记录。`, env);
+        await sendMessage(chatId, `📂 Không tìm thấy bản ghi nào chứa ghi chú với từ khóa "${descQuery}".`, env);
         return;
       }
     }
     
-    // 计算总页数
+    // Tính tổng số trang
     const totalPages = Math.ceil(filteredHistory.length / ITEMS_PER_PAGE);
     
-    // 验证页码范围
+    // Xác thực phạm vi số trang
     if (page < 1) page = 1;
     if (page > totalPages) page = totalPages;
     
-    // 计算当前页的记录
+    // Tính toán bản ghi của trang hiện tại
     const startIndex = (page - 1) * ITEMS_PER_PAGE;
     const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, filteredHistory.length);
     const pageRecords = filteredHistory.slice(startIndex, endIndex);
     
-    // 生成历史记录消息
-    let message = `📋 *上传历史记录* ${fileType ? `(${fileType})` : ''} ${searchQuery ? `🔍搜索: "${searchQuery}"` : ''} ${descQuery ? `🔍备注搜索: "${descQuery}"` : ''}\n\n`;
+    // Tạo tin nhắn lịch sử
+    let message = `📋 *Lịch sử tải lên* ${fileType ? `(${fileType})` : ''} ${searchQuery ? `🔍Tìm kiếm: "${searchQuery}"` : ''} ${descQuery ? `🔍Tìm ghi chú: "${descQuery}"` : ''}\n\n`;
     
     for (let i = 0; i < pageRecords.length; i++) {
       const record = pageRecords[i];
       const date = new Date(record.timestamp);
-      // 使用东八区时间
+      // Sử dụng giờ UTC+8
       const chinaDate = toChineseTime(date);
       const formattedDate = `${chinaDate.getFullYear()}-${String(chinaDate.getMonth() + 1).padStart(2, '0')}-${String(chinaDate.getDate()).padStart(2, '0')} ${String(chinaDate.getHours()).padStart(2, '0')}:${String(chinaDate.getMinutes()).padStart(2, '0')}`;
       
-      // 获取文件类型图标
+      // Lấy icon loại tệp
       const fileIcon = getFileTypeIcon(record.fileType);
       
       message += `${i + 1 + startIndex}. ${fileIcon} *${record.fileName}*\n`;
       
-      // 如果有备注，显示备注信息
+      // Nếu có ghi chú, hiển thị thông tin ghi chú
       if (record.description) {
-        message += `   📝 备注: ${record.description}\n`;
+        message += `   📝 Ghi chú: ${record.description}\n`;
       }
       
-      message += `   📅 上传时间: ${formattedDate}\n`;
-      message += `   📦 文件大小: ${formatFileSize(record.fileSize)}\n`;
+      message += `   📅 Thời gian: ${formattedDate}\n`;
+      message += `   📦 Kích thước: ${formatFileSize(record.fileSize)}\n`;
       message += `   🔗 URL: ${record.url}\n`;
-      message += `   🆔 记录ID: ${record.id}\n\n`;
+      message += `   🆔 Mã bản ghi: ${record.id}\n\n`;
     }
     
-    // 添加分页导航信息
-    message += `📄 页码: ${page}/${totalPages}`;
+    // Thêm thông tin phân trang
+    message += `📄 Trang: ${page}/${totalPages}`;
     
-    // 添加导航说明
-    message += `\n\n使用命令 /history page${page+1} 查看下一页`;
+    // Thêm hướng dẫn điều hướng
+    message += `\n\nSử dụng lệnh /history page${page+1} để xem trang tiếp theo`;
     if (page > 1) {
-      message += `\n使用命令 /history page${page-1} 查看上一页`;
+      message += `\nSử dụng lệnh /history page${page-1} để xem trang trước`;
     }
     
-    // 添加筛选说明
+    // Thêm hướng dẫn lọc
     if (!fileType && !searchQuery && !descQuery) {
-      message += `\n\n可按文件类型筛选:\n/history image - 仅查看图片\n/history video - 仅查看视频\n/history document - 仅查看文档`;
+      message += `\n\nCó thể lọc theo loại tệp:\n/history image - Chỉ xem ảnh\n/history video - Chỉ xem video\n/history document - Chỉ xem tài liệu`;
     } else if (!searchQuery && !descQuery) {
-      message += `\n\n使用 /history 查看所有类型的文件`;
+      message += `\n\nSử dụng /history để xem tất cả các loại tệp`;
     } else if (!descQuery) {
-      message += `\n\n使用 /history search:关键词 查看包含关键词的文件`;
+      message += `\n\nSử dụng /history search:từ_khóa để tìm tệp chứa từ khóa`;
     } else {
-      message += `\n\n使用 /history desc:关键词 查看包含备注关键词的文件`;
+      message += `\n\nSử dụng /history desc:từ_khóa để tìm ghi chú chứa từ khóa`;
     }
     
-    // 添加搜索说明
-    message += `\n\n🔍 要搜索文件名或备注，请使用:\n/history search:关键词`;
+    // Thêm hướng dẫn tìm kiếm
+    message += `\n\n🔍 Tìm kiếm theo tên tệp hoặc ghi chú:\n/history search:từ_khóa`;
     
-    // 添加备注搜索说明
-    message += `\n\n🔍 要搜索备注，请使用:\n/history desc:关键词`;
+    // Thêm hướng dẫn tìm kiếm ghi chú
+    message += `\n\n🔍 Tìm kiếm theo ghi chú:\n/history desc:từ_khóa`;
     
-    // 添加删除说明
-    message += `\n\n🗑️ 要删除某条记录，请使用:\n/history delete_记录ID`;
+    // Thêm hướng dẫn xóa
+    message += `\n\n🗑️ Để xóa một bản ghi, sử dụng:\n/history delete_mã_bản_ghi`;
     
     await sendMessage(chatId, message, env);
   } catch (error) {
-    console.error("处理历史命令出错:", error);
-    await sendMessage(chatId, `❌ 获取历史记录失败: ${error.message}`, env);
+    console.error("Lỗi khi xử lý lệnh history:", error);
+    await sendMessage(chatId, `❌ Lấy lịch sử tải lên thất bại: ${error.message}`, env);
   }
 }
 
-// 处理删除历史记录请求
+// Xử lý yêu cầu xóa bản ghi lịch sử
 async function handleDeleteHistoryRecord(chatId, recordId, env) {
   try {
     if (!env.STATS_STORAGE) {
-      await sendMessage(chatId, "❌ KV存储未配置，无法删除记录", env);
+      await sendMessage(chatId, "❌ KV Storage chưa được cấu hình, không thể xóa bản ghi", env);
       return;
     }
     
@@ -2236,51 +2232,51 @@ async function handleDeleteHistoryRecord(chatId, recordId, env) {
     const userStats = await getUserStats(chatId, env);
     
     if (!userStats.uploadHistory || userStats.uploadHistory.length === 0) {
-      await sendMessage(chatId, "📂 您还没有上传过任何文件。", env);
+      await sendMessage(chatId, "📂 Bạn chưa tải lên bất kỳ tệp nào.", env);
       return;
     }
     
-    // 查找记录索引
+    // Tìm vị trí bản ghi
     const recordIndex = userStats.uploadHistory.findIndex(record => record.id === recordId);
     
     if (recordIndex === -1) {
-      await sendMessage(chatId, "❌ 未找到指定的记录，可能已被删除。", env);
+      await sendMessage(chatId, "❌ Không tìm thấy bản ghi được chỉ định, có thể đã bị xóa.", env);
       return;
     }
     
-    // 获取记录详情用于确认消息
+    // Lấy chi tiết bản ghi để gửi tin nhắn xác nhận
     const record = userStats.uploadHistory[recordIndex];
     
-    // 删除记录
+    // Xóa bản ghi
     userStats.uploadHistory.splice(recordIndex, 1);
     
-    // 保存更新后的统计数据
+    // Lưu dữ liệu thống kê đã cập nhật
     await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
     
-    // 发送确认消息
-    let confirmMessage = `✅ 已成功删除以下记录:\n\n` +
-                         `📄 文件名: ${record.fileName}\n`;
+    // Gửi tin nhắn xác nhận
+    let confirmMessage = `✅ Đã xóa thành công bản ghi sau:\n\n` +
+                         `📄 Tên tệp: ${record.fileName}\n`;
     
-    // 如果有备注，添加备注信息
+    // Nếu có ghi chú, thêm thông tin ghi chú
     if (record.description) {
-      confirmMessage += `📝 备注: ${record.description}\n`;
+      confirmMessage += `📝 Ghi chú: ${record.description}\n`;
     }
     
-    confirmMessage += `📅 上传时间: ${formatDate(record.timestamp)}\n` +
+    confirmMessage += `📅 Thời gian: ${formatDate(record.timestamp)}\n` +
                      `🔗 URL: ${record.url}`;
     
     await sendMessage(chatId, confirmMessage, env);
   } catch (error) {
-    console.error("删除历史记录出错:", error);
-    await sendMessage(chatId, `❌ 删除记录失败: ${error.message}`, env);
+    console.error("Lỗi khi xóa bản ghi lịch sử:", error);
+    await sendMessage(chatId, `❌ Xóa bản ghi thất bại: ${error.message}`, env);
   }
 }
 
-// 格式化日期
+// Định dạng ngày tháng
 function formatDate(dateString) {
   try {
     const date = new Date(dateString);
-    // 调整为东八区时间
+    // Điều chỉnh sang múi giờ UTC+8
     const chinaDate = toChineseTime(date);
     return `${chinaDate.getFullYear()}-${String(chinaDate.getMonth() + 1).padStart(2, '0')}-${String(chinaDate.getDate()).padStart(2, '0')} ${String(chinaDate.getHours()).padStart(2, '0')}:${String(chinaDate.getMinutes()).padStart(2, '0')}`;
   } catch (e) {
@@ -2288,16 +2284,16 @@ function formatDate(dateString) {
   }
 }
 
-// 将时间转换为东八区（中国）时间
+// Chuyển đổi thời gian sang múi giờ UTC+8
 function toChineseTime(date) {
-  // 创建一个新的日期对象，避免修改原始对象
+  // Tạo một đối tượng ngày mới để tránh sửa đổi đối tượng gốc
   const chinaDate = new Date(date);
-  // 调整为东八区，加上8小时的毫秒数
+  // Điều chỉnh sang múi giờ UTC+8, thêm số mili giây tương đương 8 giờ
   chinaDate.setTime(chinaDate.getTime() + 8 * 60 * 60 * 1000);
   return chinaDate;
 }
 
-// 获取文件类型图标
+// Lấy biểu tượng loại tệp
 function getFileTypeIcon(fileType) {
   switch (fileType) {
     case 'image': return '🖼️';
@@ -2309,7 +2305,7 @@ function getFileTypeIcon(fileType) {
   }
 }
 
-// 检查用户是否被禁止
+// Kiểm tra xem người dùng có bị cấm không
 async function isUserBanned(userId, env) {
   try {
     if (!env.STATS_STORAGE) return false;
@@ -2322,12 +2318,12 @@ async function isUserBanned(userId, env) {
     const bannedUsers = JSON.parse(bannedUsersData);
     return bannedUsers.some(user => user.userId.toString() === userId.toString());
   } catch (error) {
-    console.error('检查用户是否被禁止时出错:', error);
+    console.error('Lỗi khi kiểm tra người dùng bị cấm:', error);
     return false;
   }
 }
 
-// 禁止用户
+// Cấm người dùng
 async function banUser(userId, reason, env) {
   try {
     if (!env.STATS_STORAGE) return false;
@@ -2340,35 +2336,35 @@ async function banUser(userId, reason, env) {
       bannedUsers = JSON.parse(bannedUsersData);
     }
     
-    // 检查用户是否已被禁止
+    // Kiểm tra xem người dùng đã bị cấm chưa
     const existingIndex = bannedUsers.findIndex(user => user.userId.toString() === userId.toString());
     
     if (existingIndex !== -1) {
-      // 更新禁止信息
+      // Cập nhật thông tin cấm
       bannedUsers[existingIndex] = {
         ...bannedUsers[existingIndex],
         reason: reason,
         bannedAt: getChineseISOString()
       };
     } else {
-      // 添加新的禁止用户
+      // Thêm người dùng mới vào danh sách cấm
       bannedUsers.push({
         userId: userId,
         reason: reason,
         bannedAt: getChineseISOString(),
-        bannedBy: 'admin' // 可以改为记录真实管理员ID或名称
+        bannedBy: 'admin' // Có thể đổi thành ghi lại ID hoặc tên admin thực tế
       });
     }
     
     await env.STATS_STORAGE.put(bannedUsersKey, JSON.stringify(bannedUsers));
     return true;
   } catch (error) {
-    console.error('禁止用户时出错:', error);
+    console.error('Lỗi khi cấm người dùng:', error);
     return false;
   }
 }
 
-// 解除用户禁止
+// Giải lệnh cấm người dùng
 async function unbanUser(userId, env) {
   try {
     if (!env.STATS_STORAGE) return false;
@@ -2376,22 +2372,22 @@ async function unbanUser(userId, env) {
     const bannedUsersKey = 'banned_users';
     const bannedUsersData = await env.STATS_STORAGE.get(bannedUsersKey);
     
-    if (!bannedUsersData) return true; // 没有禁止列表，直接返回成功
+    if (!bannedUsersData) return true; // Không có danh sách cấm, trả về thành công trực tiếp
     
     let bannedUsers = JSON.parse(bannedUsersData);
     
-    // 移除指定用户
+    // Loại bỏ người dùng được chỉ định
     bannedUsers = bannedUsers.filter(user => user.userId.toString() !== userId.toString());
     
     await env.STATS_STORAGE.put(bannedUsersKey, JSON.stringify(bannedUsers));
     return true;
   } catch (error) {
-    console.error('解除用户禁止时出错:', error);
+    console.error('Lỗi khi giải lệnh cấm người dùng:', error);
     return false;
   }
 }
 
-// 获取被禁止的用户列表
+// Lấy danh sách người dùng bị cấm
 async function getBannedUsers(env) {
   try {
     if (!env.STATS_STORAGE) return [];
@@ -2403,12 +2399,12 @@ async function getBannedUsers(env) {
     
     return JSON.parse(bannedUsersData);
   } catch (error) {
-    console.error('获取被禁止用户列表时出错:', error);
+    console.error('Lỗi khi lấy danh sách người dùng bị cấm:', error);
     return [];
   }
 }
 
-// 添加用户到用户列表
+// Thêm người dùng vào danh sách người dùng
 async function addUserToList(userId, username, env) {
   try {
     if (!env.STATS_STORAGE) return false;
@@ -2421,18 +2417,18 @@ async function addUserToList(userId, username, env) {
       usersList = JSON.parse(usersListData);
     }
     
-    // 检查用户是否已存在
+    // Kiểm tra xem người dùng đã tồn tại chưa
     const existingIndex = usersList.findIndex(user => user.userId.toString() === userId.toString());
     
     if (existingIndex !== -1) {
-      // 更新用户信息
+      // Cập nhật thông tin người dùng
       usersList[existingIndex] = {
         ...usersList[existingIndex],
         username: username,
         lastSeen: getChineseISOString()
       };
     } else {
-      // 添加新用户
+      // Thêm người dùng mới
       usersList.push({
         userId: userId,
         username: username,
@@ -2444,12 +2440,12 @@ async function addUserToList(userId, username, env) {
     await env.STATS_STORAGE.put(usersListKey, JSON.stringify(usersList));
     return true;
   } catch (error) {
-    console.error('添加用户到用户列表时出错:', error);
+    console.error('Lỗi khi thêm người dùng vào danh sách:', error);
     return false;
   }
 }
 
-// 获取所有用户
+// Lấy tất cả người dùng
 async function getAllUsers(env) {
   try {
     if (!env.STATS_STORAGE) return [];
@@ -2462,17 +2458,17 @@ async function getAllUsers(env) {
     const usersList = JSON.parse(usersListData);
     return usersList.map(user => user.userId);
   } catch (error) {
-    console.error('获取所有用户时出错:', error);
+    console.error('Lỗi khi lấy danh sách tất cả người dùng:', error);
     return [];
   }
 }
 
-// 获取机器人使用统计
+// Lấy thống kê sử dụng bot
 async function getBotStats(env) {
   try {
     if (!env.STATS_STORAGE) return {};
     
-    // 获取用户列表
+    // Lấy danh sách người dùng
     const usersListKey = 'users_list';
     const usersListData = await env.STATS_STORAGE.get(usersListKey);
     let usersList = [];
@@ -2480,14 +2476,14 @@ async function getBotStats(env) {
       usersList = JSON.parse(usersListData);
     }
     
-    // 获取被禁止用户列表
+    // Lấy danh sách người dùng bị cấm
     const bannedUsers = await getBannedUsers(env);
     
-    // 计算总上传统计
+    // Tính toán tổng số lượng tải lên
     let totalUploads = 0;
     let totalSize = 0;
     
-    // 遍历所有用户获取上传统计
+    // Duyệt qua tất cả người dùng để lấy thống kê tải lên
     for (const user of usersList) {
       const statsKey = `user_stats_${user.userId}`;
       const userStatsData = await env.STATS_STORAGE.get(statsKey);
@@ -2506,12 +2502,12 @@ async function getBotStats(env) {
       bannedUsers: bannedUsers.length
     };
   } catch (error) {
-    console.error('获取机器人使用统计时出错:', error);
+    console.error('Lỗi khi lấy thống kê sử dụng bot:', error);
     return {};
   }
 }
 
-// 获取所有用户的详细信息
+// Lấy thông tin chi tiết của tất cả người dùng
 async function getAllUsersDetails(env) {
   try {
     if (!env.STATS_STORAGE) return [];
@@ -2521,29 +2517,29 @@ async function getAllUsersDetails(env) {
     
     if (!usersListData) return [];
     
-    // 返回完整的用户信息列表，包括时间、用户名等
+    // Trả về danh sách chi tiết người dùng bao gồm thời gian, username, v.v.
     return JSON.parse(usersListData);
   } catch (error) {
-    console.error('获取所有用户详细信息时出错:', error);
+    console.error('Lỗi khi lấy thông tin chi tiết tất cả người dùng:', error);
     return [];
   }
 }
 
-// 创建一个获取当前东八区时间的函数
+// Tạo hàm lấy thời gian hiện tại theo múi giờ UTC+8
 function getCurrentChineseTime() {
   return toChineseTime(new Date());
 }
 
-// 创建一个获取当前东八区时间的ISO字符串的函数
+// Tạo hàm lấy chuỗi ISO thời gian hiện tại theo múi giờ UTC+8
 function getChineseISOString() {
-  // 获取当前中国时间
+  // Lấy thời gian hiện tại (đã điều chỉnh UTC+8)
   const chinaTime = getCurrentChineseTime();
-  // 将中国时间转换回UTC以获得正确的ISO字符串
+  // Chuyển lại UTC để có chuỗi ISO chính xác
   const utcTime = new Date(chinaTime.getTime() - 8 * 60 * 60 * 1000);
   return utcTime.toISOString();
 }
 
-// 获取自动清理设置
+// Lấy cấu hình tự động dọn dẹp
 async function getAutoCleanSettings(env) {
   try {
     if (!env.STATS_STORAGE) return null;
@@ -2555,19 +2551,19 @@ async function getAutoCleanSettings(env) {
     
     return JSON.parse(settingsData);
   } catch (error) {
-    console.error('获取自动清理设置时出错:', error);
+    console.error('Lỗi khi lấy cấu hình tự động dọn dẹp:', error);
     return null;
   }
 }
 
-// 更新自动清理设置
+// Cập nhật cấu hình tự động dọn dẹp
 async function updateAutoCleanSettings(settings, env) {
   try {
     if (!env.STATS_STORAGE) return false;
     
     const settingsKey = 'auto_clean_settings';
     
-    // 获取当前设置
+    // Lấy cấu hình hiện tại
     const currentSettingsData = await env.STATS_STORAGE.get(settingsKey);
     let currentSettings = {};
     
@@ -2575,7 +2571,7 @@ async function updateAutoCleanSettings(settings, env) {
       currentSettings = JSON.parse(currentSettingsData);
     }
     
-    // 合并新旧设置
+    // Hợp nhất cấu hình cũ và mới
     const newSettings = {
       ...currentSettings,
       ...settings,
@@ -2585,28 +2581,28 @@ async function updateAutoCleanSettings(settings, env) {
     await env.STATS_STORAGE.put(settingsKey, JSON.stringify(newSettings));
     return true;
   } catch (error) {
-    console.error('更新自动清理设置时出错:', error);
+    console.error('Lỗi khi cập nhật cấu hình tự động dọn dẹp:', error);
     return false;
   }
 }
 
-// 清理指定天数之前的记录
+// Dọn dẹp các hồ sơ trước số ngày chỉ định
 async function cleanOldRecords(days, env) {
   try {
     if (!env.STATS_STORAGE) return 0;
     
-    // 获取所有用户
+    // Lấy tất cả người dùng
     const users = await getAllUsersDetails(env);
     let totalCleanedCount = 0;
     
-    // 计算截止日期（当前时间减去指定天数）
+    // Tính toán ngày giới hạn (thời gian hiện tại trừ đi số ngày chỉ định)
     const now = new Date();
     const cutoffDate = new Date(now.getTime() - (days * 24 * 60 * 60 * 1000));
     const cutoffDateStr = cutoffDate.toISOString();
     
-    console.log(`开始清理 ${days} 天前的记录，截止日期: ${cutoffDateStr}`);
+    console.log(`Bắt đầu dọn dẹp hồ sơ từ ${days} ngày trước, ngày giới hạn: ${cutoffDateStr}`);
     
-    // 遍历所有用户，清理他们的记录
+    // Duyệt qua tất cả người dùng, dọn dẹp hồ sơ của họ
     for (const user of users) {
       const userId = user.userId;
       const statsKey = `user_stats_${userId}`;
@@ -2615,13 +2611,13 @@ async function cleanOldRecords(days, env) {
       if (userStatsData) {
         const userStats = JSON.parse(userStatsData);
         
-        // 如果有上传历史，清理过期的记录
+        // Nếu có lịch sử tải lên, dọn dẹp các hồ sơ đã hết hạn
         if (userStats.uploadHistory && userStats.uploadHistory.length > 0) {
           const originalLength = userStats.uploadHistory.length;
           
-          // 过滤保留截止日期之后的记录
+          // Lọc giữ lại các hồ sơ sau ngày giới hạn
           userStats.uploadHistory = userStats.uploadHistory.filter(record => {
-            // 检查记录的时间戳是否晚于截止日期
+            // Kiểm tra xem dấu thời gian của hồ sơ có muộn hơn ngày giới hạn không
             return record.timestamp > cutoffDateStr;
           });
           
@@ -2629,63 +2625,63 @@ async function cleanOldRecords(days, env) {
           totalCleanedCount += cleanedCount;
           
           if (cleanedCount > 0) {
-            console.log(`为用户 ${userId} 清理了 ${cleanedCount} 条记录`);
+            console.log(`Đã dọn dẹp ${cleanedCount} hồ sơ cho người dùng ${userId}`);
             
-            // 保存更新后的用户统计数据
+            // Lưu dữ liệu thống kê người dùng đã cập nhật
             await env.STATS_STORAGE.put(statsKey, JSON.stringify(userStats));
           }
         }
       }
     }
     
-    console.log(`总共清理了 ${totalCleanedCount} 条记录`);
+    console.log(`Tổng cộng đã dọn dẹp ${totalCleanedCount} hồ sơ`);
     return totalCleanedCount;
   } catch (error) {
-    console.error('清理旧记录时出错:', error);
+    console.error('Lỗi khi dọn dẹp hồ sơ cũ:', error);
     return 0;
   }
 }
 
-// 检查并执行自动清理
+// Kiểm tra và thực hiện tự động dọn dẹp
 async function checkAndExecuteAutoClean(env) {
   try {
     const settings = await getAutoCleanSettings(env);
     
-    // 如果启用了自动清理，且设置了有效的天数
+    // Nếu đã bật tự động dọn dẹp và đã thiết lập số ngày hợp lệ
     if (settings && settings.enabled && settings.days > 0) {
-      // 检查上次清理时间，避免频繁清理
+      // Kiểm tra thời gian dọn dẹp cuối cùng để tránh dọn dẹp thường xuyên
       const lastCleanTime = settings.lastCleanTime ? new Date(settings.lastCleanTime) : null;
       const now = new Date();
       
-      // 如果从未清理过或者距离上次清理已经过了至少6小时
-      const SIX_HOURS = 6 * 60 * 60 * 1000; // 6小时的毫秒数
+      // Nếu chưa bao giờ dọn dẹp hoặc cách lần dọn dẹp cuối cùng ít nhất 6 giờ
+      const SIX_HOURS = 6 * 60 * 60 * 1000; // Số mili giây trong 6 giờ
       if (!lastCleanTime || (now.getTime() - lastCleanTime.getTime() > SIX_HOURS)) {
-        console.log(`执行自动清理，清理 ${settings.days} 天前的记录`);
+        console.log(`Thực hiện tự động dọn dẹp, dọn dẹp hồ sơ từ ${settings.days} ngày trước`);
         
-        // 执行清理操作
+        // Thực hiện thao tác dọn dẹp
         const cleanedCount = await cleanOldRecords(settings.days, env);
         
-        // 更新最后清理时间
+        // Cập nhật thời gian dọn dẹp cuối cùng
         await updateAutoCleanSettings({
           ...settings,
           lastCleanTime: now.toISOString()
         }, env);
         
         if (cleanedCount > 0) {
-          console.log(`自动清理完成，共清理了 ${cleanedCount} 条记录`);
+          console.log(`Tự động dọn dẹp hoàn tất, tổng cộng đã dọn dẹp ${cleanedCount} hồ sơ`);
         }
       } else {
-        console.log(`上次清理时间为 ${lastCleanTime.toISOString()}，尚未达到清理间隔（6小时），跳过清理`);
+        console.log(`Thời gian dọn dẹp cuối cùng là ${lastCleanTime.toISOString()}, chưa đạt đến khoảng thời gian dọn dẹp (6 giờ), bỏ qua dọn dẹp`);
       }
     }
   } catch (error) {
-    console.error('执行自动清理时出错:', error);
+    console.error('Lỗi khi thực hiện tự động dọn dẹp:', error);
   }
 }
 
 // ===== 分片上传功能实现 =====
 
-// 检查用户是否处于分片上传模式
+// Kiểm tra người dùng có đang ở chế độ tải lên phân đoạn không
 async function isUserInChunkUploadMode(userId, env) {
   try {
     if (!env.STATS_STORAGE) return false;
@@ -2693,36 +2689,36 @@ async function isUserInChunkUploadMode(userId, env) {
     const chunkStateKey = `chunk_state_${userId}`;
     const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
     
-    return !!chunkStateData; // 如果有状态数据，说明用户处于分片上传模式
+    return !!chunkStateData; // Nếu có dữ liệu trạng thái, nghĩa là người dùng đang ở chế độ tải lên phân đoạn
   } catch (error) {
-    console.error('检查用户分片上传模式时出错:', error);
+    console.error('Lỗi khi kiểm tra chế độ tải lên phân đoạn của người dùng:', error);
     return false;
   }
 }
 
-// 启动分片上传流程
+// Bắt đầu quy trình tải lên phân đoạn
 async function handleChunkUploadStart(chatId, userId, message, env) {
   try {
     if (!env.STATS_STORAGE) {
-      await sendMessage(chatId, "❌ 无法启动分片上传，存储服务未配置", env);
+      await sendMessage(chatId, "❌ Không thể bắt đầu tải lên phân đoạn, dịch vụ lưu trữ chưa được cấu hình", env);
       return;
     }
     
-    // 检查用户是否已经在分片上传模式
+    // Kiểm tra xem người dùng đã ở chế độ tải lên phân đoạn chưa
     const isInMode = await isUserInChunkUploadMode(userId, env);
     if (isInMode) {
-      await sendMessage(chatId, "⚠️ 您已经在分片上传模式中。\n\n继续发送文件分片，或使用 /chunk_cancel 取消当前上传。", env);
+      await sendMessage(chatId, "⚠️ Bạn đang trong chế độ tải lên phân đoạn.\n\nHãy tiếp tục gửi các mảnh tệp, hoặc sử dụng /chunk_cancel để hủy lần tải lên hiện tại.", env);
       return;
     }
     
-    // 解析参数，获取文件名和分片数量
+    // Phân tích tham số, lấy tên tệp và số lượng phân đoạn
     const args = message.text.split(' ');
     let totalChunks = 0;
     let fileName = "";
     let fileDescription = "";
     
     if (args.length >= 2) {
-      // 可能是 /chunk_upload 5 file.zip 或 /chunk_upload file.zip
+      // Có thể là /chunk_upload 5 file.zip hoặc /chunk_upload file.zip
       if (!isNaN(parseInt(args[1]))) {
         totalChunks = parseInt(args[1]);
         fileName = args.length >= 3 ? args[2] : "merged_file";
@@ -2730,24 +2726,24 @@ async function handleChunkUploadStart(chatId, userId, message, env) {
         fileName = args[1];
       }
       
-      // 提取文件描述（如果有）
+      // Trích xuất mô tả tệp (nếu có)
       if (args.length > (totalChunks ? 3 : 2)) {
         fileDescription = args.slice(totalChunks ? 3 : 2).join(' ');
       }
     }
     
-    // 如果未指定分片数，提示用户输入
+    // Nếu chưa chỉ định số phân đoạn, yêu cầu người dùng nhập
     if (totalChunks <= 0) {
-      await sendMessage(chatId, "🔄 请输入分片数量和文件名：\n\n格式：`/chunk_upload 分片数量 文件名 [文件描述]`\n\n例如：`/chunk_upload 5 large_video.mp4 我的大视频`", env);
+      await sendMessage(chatId, "🔄 Vui lòng nhập số lượng phân đoạn và tên tệp:\n\nĐịnh dạng: `/chunk_upload số_phân_đoạn tên_tệp [mô_tả]`\n\nVí dụ: `/chunk_upload 5 video_lon.mp4 Video của tôi`", env);
       return;
     }
     
-    // 文件名验证
+    // Xác thực tên tệp
     if (!fileName || fileName.length < 2) {
       fileName = `chunked_file_${Date.now()}`;
     }
     
-    // 创建上传会话状态
+    // Tạo trạng thái phiên tải lên
     const chunkState = {
       userId: userId,
       chatId: chatId,
@@ -2762,58 +2758,58 @@ async function handleChunkUploadStart(chatId, userId, message, env) {
       status: 'waiting' // waiting, receiving, merging, complete, failed
     };
     
-    // 保存会话状态
+    // Lưu trạng thái phiên
     const chunkStateKey = `chunk_state_${userId}`;
     await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
     
-    // 发送开始消息
-    const instructionMsg = `📤 *分片上传已启动*\n\n` +
-                          `📋 文件名: ${fileName}\n` +
-                          `📦 总分片数: ${totalChunks}\n` +
-                          `📝 文件描述: ${fileDescription || '无'}\n\n` +
-                          `请按照以下步骤操作:\n` +
-                          `1. 请逐个发送文件分片（总共${totalChunks}个分片）\n` +
-                          `2. 分片将按照发送顺序合并\n` +
-                          `3. 所有分片上传完成后，系统将自动合并并上传\n\n` +
-                          `⚠️ 注意事项:\n` +
-                          `- 分片必须小于20MB\n` +
-                          `- 分片上传过程中请勿发送其他消息\n` +
-                          `- 使用 /chunk_cancel 取消上传\n\n` +
-                          `🔄 请发送第1个分片...`;
+    // Gửi tin nhắn hướng dẫn
+    const instructionMsg = `📤 *Đã bắt đầu tải lên phân đoạn*\n\n` +
+                          `📋 Tên tệp: ${fileName}\n` +
+                          `📦 Tổng số phân đoạn: ${totalChunks}\n` +
+                          `📝 Mô tả tệp: ${fileDescription || 'Không có'}\n\n` +
+                          `Vui lòng thực hiện theo các bước sau:\n` +
+                          `1. Vui lòng gửi từng mảnh tệp (tổng cộng ${totalChunks} mảnh)\n` +
+                          `2. Các mảnh sẽ được hợp nhất theo thứ tự gửi\n` +
+                          `3. Sau khi tất cả các mảnh được tải lên, hệ thống sẽ tự động hợp nhất và tải lên\n\n` +
+                          `⚠️ Lưu ý:\n` +
+                          `- Mỗi mảnh phải nhỏ hơn 20MB\n` +
+                          `- Vui lòng không gửi tin nhắn khác trong quá trình tải lên phân đoạn\n` +
+                          `- Sử dụng /chunk_cancel để hủy tải lên\n\n` +
+                          `🔄 Vui lòng gửi mảnh thứ 1...`;
     
     await sendMessage(chatId, instructionMsg, env);
   } catch (error) {
-    console.error('启动分片上传时出错:', error);
-    await sendMessage(chatId, `❌ 启动分片上传时出错: ${error.message}`, env);
+    console.error('Lỗi khi bắt đầu tải lên phân đoạn:', error);
+    await sendMessage(chatId, `❌ Lỗi khi bắt đầu tải lên phân đoạn: ${error.message}`, env);
   }
 }
 
-// 处理分片上传中的消息
+// Xử lý tin nhắn trong quá trình tải lên phân đoạn
 async function handleChunkUploadMessage(message, chatId, userId, env) {
   try {
     if (!env.STATS_STORAGE) {
-      await sendMessage(chatId, "❌ 存储服务未配置，无法继续分片上传", env);
+      await sendMessage(chatId, "❌ Dịch vụ lưu trữ chưa được cấu hình, không thể tiếp tục tải lên phân đoạn", env);
       return;
     }
     
-    // 获取当前会话状态
+    // Lấy trạng thái phiên hiện tại
     const chunkStateKey = `chunk_state_${userId}`;
     const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
     
     if (!chunkStateData) {
-      await sendMessage(chatId, "❌ 分片上传会话已失效，请重新开始。使用 /chunk_upload 命令启动新的上传。", env);
+      await sendMessage(chatId, "❌ Phiên tải lên phân đoạn đã hết hạn, vui lòng bắt đầu lại. Sử dụng lệnh /chunk_upload để bắt đầu tải lên mới.", env);
       return;
     }
     
     let chunkState = JSON.parse(chunkStateData);
     
-    // 检查是否是取消命令
+    // Kiểm tra xem có phải lệnh hủy không
     if (message.text && message.text.startsWith('/chunk_cancel')) {
       await handleChunkUploadCancel(chatId, userId, env);
       return;
     }
     
-    // 检查是否收到文件
+    // Kiểm tra xem có nhận được tệp không
     let fileId = null;
     let fileType = 'document';
     let fileName = '';
@@ -2844,45 +2840,45 @@ async function handleChunkUploadMessage(message, chatId, userId, env) {
       fileName = message.animation.file_name || `animation_chunk_${chunkState.receivedChunks + 1}.gif`;
       fileSize = message.animation.file_size || 0;
     } else {
-      // 如果不是文件消息，发送提醒
-      await sendMessage(chatId, `⚠️ 请发送文件分片。您已上传 ${chunkState.receivedChunks}/${chunkState.totalChunks} 个分片。`, env);
+      // Nếu không phải tin nhắn tệp, gửi lời nhắc
+      await sendMessage(chatId, `⚠️ Vui lòng gửi mảnh tệp. Bạn đã tải lên ${chunkState.receivedChunks}/${chunkState.totalChunks} mảnh.`, env);
       return;
     }
     
-    // 发送处理消息
-    const sendResult = await sendMessage(chatId, `🔄 正在处理第 ${chunkState.receivedChunks + 1}/${chunkState.totalChunks} 个分片...`, env);
+    // Gửi tin nhắn đang xử lý
+    const sendResult = await sendMessage(chatId, `🔄 Đang xử lý mảnh thứ ${chunkState.receivedChunks + 1}/${chunkState.totalChunks}...`, env);
     const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
     
     try {
-      // 获取文件
+      // Lấy tệp
       const fileInfo = await getFile(fileId, env);
       
       if (!fileInfo || !fileInfo.ok) {
-        throw new Error('获取文件信息失败');
+        throw new Error('Lấy thông tin tệp thất bại');
       }
       
       const filePath = fileInfo.result.file_path;
       const fileUrl = `https://api.telegram.org/file/bot${env.BOT_TOKEN}/${filePath}`;
       
-      // 下载文件内容
+      // Tải nội dung tệp
       const response = await fetch(fileUrl);
       if (!response.ok) {
-        throw new Error(`下载文件失败: ${response.status}`);
+        throw new Error(`Tải tệp thất bại: ${response.status}`);
       }
       
       const buffer = await response.arrayBuffer();
       
-      // 更新会话状态
+      // Cập nhật trạng thái phiên
       chunkState.receivedChunks += 1;
       chunkState.lastActivity = getChineseISOString();
       chunkState.totalSize += buffer.byteLength;
       chunkState.status = 'receiving';
       
-      // 使用KV存储分片数据（如果分片过大，可能需要使用Cloudflare R2或其他对象存储）
+      // Sử dụng lưu trữ KV cho dữ liệu mảnh (nếu mảnh quá lớn, có thể cần sử dụng Cloudflare R2 hoặc lưu trữ đối tượng khác)
       const chunkKey = `chunk_${userId}_${chunkState.receivedChunks}`;
       await env.STATS_STORAGE.put(chunkKey, buffer);
       
-      // 更新分片信息
+      // Cập nhật thông tin mảnh
       chunkState.chunks[chunkState.receivedChunks] = {
         key: chunkKey,
         size: buffer.byteLength,
@@ -2890,11 +2886,11 @@ async function handleChunkUploadMessage(message, chatId, userId, env) {
         type: fileType
       };
       
-      // 发送进度消息
-      const progressMsg = `✅ 已接收第 ${chunkState.receivedChunks}/${chunkState.totalChunks} 个分片\n` +
-                        `📦 大小: ${formatFileSize(buffer.byteLength)}\n` +
-                        `📋 文件名: ${fileName}\n` +
-                        `📊 总进度: ${Math.round((chunkState.receivedChunks / chunkState.totalChunks) * 100)}%`;
+      // Gửi tin nhắn tiến độ
+      const progressMsg = `✅ Đã nhận mảnh thứ ${chunkState.receivedChunks}/${chunkState.totalChunks}\n` +
+                        `📦 Kích thước: ${formatFileSize(buffer.byteLength)}\n` +
+                        `📋 Tên tệp: ${fileName}\n` +
+                        `📊 Tổng tiến độ: ${Math.round((chunkState.receivedChunks / chunkState.totalChunks) * 100)}%`;
       
       if (messageId) {
         await editMessage(chatId, messageId, progressMsg, env);
@@ -2902,137 +2898,137 @@ async function handleChunkUploadMessage(message, chatId, userId, env) {
         await sendMessage(chatId, progressMsg, env);
       }
       
-      // 检查是否所有分片都已接收
+      // Kiểm tra xem tất cả các mảnh đã được nhận chưa
       if (chunkState.receivedChunks === chunkState.totalChunks) {
-        // 所有分片接收完毕，开始合并
-        await sendMessage(chatId, `🔄 所有分片已接收，正在合并文件...`, env);
+        // Tất cả mảnh đã nhận xong, bắt đầu hợp nhất
+        await sendMessage(chatId, `🔄 Tất cả các mảnh đã nhận đủ, đang hợp nhất tệp...`, env);
         
-        // 更新状态
+        // Cập nhật trạng thái
         chunkState.status = 'merging';
         await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
         
-        // 合并文件并上传
+        // Hợp nhất tệp và tải lên
         await mergeAndUploadChunks(chatId, userId, env);
       } else {
-        // 保存更新后的会话状态
+        // Lưu trạng thái phiên đã cập nhật
         await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
         
-        // 提示上传下一个分片
-        await sendMessage(chatId, `🔄 请发送第 ${chunkState.receivedChunks + 1}/${chunkState.totalChunks} 个分片...`, env);
+        // Nhắc tải lên mảnh tiếp theo
+        await sendMessage(chatId, `🔄 Vui lòng gửi mảnh thứ ${chunkState.receivedChunks + 1}/${chunkState.totalChunks}...`, env);
       }
     } catch (error) {
-      console.error('处理分片时出错:', error);
+      console.error('Lỗi khi xử lý mảnh:', error);
       
       if (messageId) {
-        await editMessage(chatId, messageId, `❌ 处理分片时出错: ${error.message}`, env);
+        await editMessage(chatId, messageId, `❌ Lỗi khi xử lý mảnh: ${error.message}`, env);
       } else {
-        await sendMessage(chatId, `❌ 处理分片时出错: ${error.message}`, env);
+        await sendMessage(chatId, `❌ Lỗi khi xử lý mảnh: ${error.message}`, env);
       }
       
-      // 更新状态为失败
+      // Cập nhật trạng thái thất bại
       chunkState.status = 'failed';
       await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
     }
   } catch (error) {
-    console.error('处理分片上传消息时出错:', error);
-    await sendMessage(chatId, `❌ 处理分片上传时出错: ${error.message}`, env);
+    console.error('Lỗi khi xử lý tin nhắn tải lên phân đoạn:', error);
+    await sendMessage(chatId, `❌ Lỗi khi tải lên phân đoạn: ${error.message}`, env);
   }
 }
 
-// 取消分片上传
+// Hủy tải lên phân đoạn
 async function handleChunkUploadCancel(chatId, userId, env) {
   try {
     if (!env.STATS_STORAGE) {
-      await sendMessage(chatId, "❌ 存储服务未配置，无法取消上传", env);
+      await sendMessage(chatId, "❌ Dịch vụ lưu trữ chưa được cấu hình, không thể hủy tải lên", env);
       return;
     }
     
-    // 获取当前会话状态
+    // Lấy trạng thái phiên hiện tại
     const chunkStateKey = `chunk_state_${userId}`;
     const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
     
     if (!chunkStateData) {
-      await sendMessage(chatId, "⚠️ 没有正在进行的分片上传", env);
+      await sendMessage(chatId, "⚠️ Không có lần tải lên phân đoạn nào đang diễn ra", env);
       return;
     }
     
-    // 解析会话状态
+    // Phân tích trạng thái phiên
     const chunkState = JSON.parse(chunkStateData);
     
-    // 删除所有分片数据
+    // Xóa tất cả dữ liệu mảnh
     for (const chunkNum in chunkState.chunks) {
       const chunkKey = chunkState.chunks[chunkNum].key;
       await env.STATS_STORAGE.delete(chunkKey);
     }
     
-    // 删除会话状态
+    // Xóa trạng thái phiên
     await env.STATS_STORAGE.delete(chunkStateKey);
     
-    // 发送取消消息
-    await sendMessage(chatId, "✅ 分片上传已取消，所有临时数据已清除", env);
+    // Gửi tin nhắn xác nhận hủy
+    await sendMessage(chatId, "✅ Đã hủy tải lên phân đoạn, tất cả dữ liệu tạm thời đã được xóa", env);
   } catch (error) {
-    console.error('取消分片上传时出错:', error);
-    await sendMessage(chatId, `❌ 取消分片上传时出错: ${error.message}`, env);
+    console.error('Lỗi khi hủy tải lên phân đoạn:', error);
+    await sendMessage(chatId, `❌ Lỗi khi hủy tải lên phân đoạn: ${error.message}`, env);
   }
 }
 
-// 合并分片并上传
+// Hợp nhất các mảnh và tải lên
 async function mergeAndUploadChunks(chatId, userId, env) {
   try {
     if (!env.STATS_STORAGE) {
-      await sendMessage(chatId, "❌ 存储服务未配置，无法合并分片", env);
+      await sendMessage(chatId, "❌ Dịch vụ lưu trữ chưa được cấu hình, không thể hợp nhất các mảnh", env);
       return;
     }
     
-    // 获取当前会话状态
+    // Lấy trạng thái phiên hiện tại
     const chunkStateKey = `chunk_state_${userId}`;
     const chunkStateData = await env.STATS_STORAGE.get(chunkStateKey);
     
     if (!chunkStateData) {
-      await sendMessage(chatId, "❌ 分片上传会话已失效", env);
+      await sendMessage(chatId, "❌ Phiên tải lên phân đoạn đã hết hạn", env);
       return;
     }
     
     const chunkState = JSON.parse(chunkStateData);
     
-    // 发送处理消息
-    const sendResult = await sendMessage(chatId, `🔄 正在合并 ${chunkState.totalChunks} 个分片并上传文件...`, env);
+    // Gửi tin nhắn đang xử lý
+    const sendResult = await sendMessage(chatId, `🔄 Đang hợp nhất ${chunkState.totalChunks} mảnh và tải lên tệp...`, env);
     const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
     
     try {
-      // 合并所有分片
+      // Hợp nhất tất cả các mảnh
       let mergedBuffer = new Uint8Array(chunkState.totalSize);
       let offset = 0;
       
-      // 按顺序合并分片
+      // Hợp nhất các mảnh theo đúng thứ tự
       for (let i = 1; i <= chunkState.totalChunks; i++) {
         const chunkInfo = chunkState.chunks[i];
         if (!chunkInfo) {
-          throw new Error(`缺少第 ${i} 个分片`);
+          throw new Error(`Thiếu mảnh thứ ${i}`);
         }
         
-        // 获取分片数据
+        // Lấy dữ liệu mảnh
         const chunkData = await env.STATS_STORAGE.get(chunkInfo.key, 'arrayBuffer');
         if (!chunkData) {
-          throw new Error(`无法获取第 ${i} 个分片数据`);
+          throw new Error(`Không thể lấy dữ liệu mảnh thứ ${i}`);
         }
         
-        // 复制到合并缓冲区
+        // Sao chép vào bộ đệm hợp nhất
         new Uint8Array(mergedBuffer.buffer).set(new Uint8Array(chunkData), offset);
         offset += chunkData.byteLength;
         
-        // 更新进度
+        // Cập nhật tiến độ
         if (messageId) {
-          await editMessage(chatId, messageId, `🔄 正在合并: ${i}/${chunkState.totalChunks} 个分片 (${Math.round((i / chunkState.totalChunks) * 100)}%)`, env);
+          await editMessage(chatId, messageId, `🔄 Đang hợp nhất: ${i}/${chunkState.totalChunks} mảnh (${Math.round((i / chunkState.totalChunks) * 100)}%)`, env);
         }
       }
       
-      // 准备上传
+      // Chuẩn bị tải lên
       if (messageId) {
-        await editMessage(chatId, messageId, `🔄 分片合并完成，正在上传文件...`, env);
+        await editMessage(chatId, messageId, `🔄 Hợp nhất các mảnh hoàn tất, đang tải lên tệp...`, env);
       }
       
-      // 上传合并后的文件
+      // Tải lên tệp đã hợp nhất
       const formData = new FormData();
       const mimeType = getMimeTypeFromFileName(chunkState.fileName);
       formData.append('file', new File([mergedBuffer], chunkState.fileName, { type: mimeType }));
@@ -3044,7 +3040,7 @@ async function mergeAndUploadChunks(chatId, userId, env) {
         uploadUrl.searchParams.append('authCode', env.AUTH_CODE);
       }
       
-      console.log(`分片合并后的文件上传请求 URL: ${uploadUrl.toString()}`);
+      console.log(`URL yêu cầu tải lên tệp sau khi hợp nhất: ${uploadUrl.toString()}`);
       
       const uploadResponse = await fetch(uploadUrl, {
         method: 'POST',
@@ -3053,7 +3049,7 @@ async function mergeAndUploadChunks(chatId, userId, env) {
       });
       
       const responseText = await uploadResponse.text();
-      console.log('合并文件上传原始响应:', responseText);
+      console.log('Phản hồi thô khi tải lên tệp hợp nhất:', responseText);
       
       let uploadResult;
       try {
@@ -3066,23 +3062,23 @@ async function mergeAndUploadChunks(chatId, userId, env) {
       const fileUrl = extractedResult.url;
       
       if (fileUrl) {
-        // 上传成功
+        // Tải lên thành công
         chunkState.status = 'complete';
         chunkState.finalUrl = fileUrl;
         await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
         
-        // 构建成功消息
-        let successMsg = `✅ 分片上传成功！\n\n` +
-                        `📄 文件名: ${chunkState.fileName}\n`;
+        // Xây dựng tin nhắn thành công
+        let successMsg = `✅ Tải lên phân đoạn thành công!\n\n` +
+                        `📄 Tên tệp: ${chunkState.fileName}\n`;
         
-        // 如果有文件描述，添加备注信息
+        // Nếu có mô tả tệp, thêm thông tin ghi chú
         if (chunkState.description) {
-          successMsg += `📝 备注: ${chunkState.description}\n`;
+          successMsg += `📝 Ghi chú: ${chunkState.description}\n`;
         }
         
-        successMsg += `📦 文件大小: ${formatFileSize(chunkState.totalSize)}\n` +
-                     `🧩 分片数量: ${chunkState.totalChunks}\n\n` +
-                     `🔗 URL：${fileUrl}`;
+        successMsg += `📦 Kích thước tệp: ${formatFileSize(chunkState.totalSize)}\n` +
+                     `🧩 Số mảnh: ${chunkState.totalChunks}\n\n` +
+                     `🔗 URL: ${fileUrl}`;
         
         if (messageId) {
           await editMessage(chatId, messageId, successMsg, env);
@@ -3090,7 +3086,7 @@ async function mergeAndUploadChunks(chatId, userId, env) {
           await sendMessage(chatId, successMsg, env);
         }
         
-        // 更新用户统计数据
+        // Cập nhật dữ liệu thống kê người dùng
         await updateUserStats(chatId, {
           fileType: 'document',
           fileSize: chunkState.totalSize,
@@ -3100,64 +3096,64 @@ async function mergeAndUploadChunks(chatId, userId, env) {
           description: chunkState.description
         }, env);
         
-        // 清理临时分片数据
+        // Dọn dẹp dữ liệu mảnh tạm thời
         cleanupChunkData(userId, chunkState, env);
       } else {
-        // 上传失败
-        throw new Error('无法获取上传URL');
+        // Tải lên thất bại
+        throw new Error('Không thể lấy được URL tải lên');
       }
     } catch (error) {
-      console.error('合并分片并上传时出错:', error);
+      console.error('Lỗi khi hợp nhất mảnh và tải lên:', error);
       
       if (messageId) {
-        await editMessage(chatId, messageId, `❌ 合并分片并上传时出错: ${error.message}`, env);
+        await editMessage(chatId, messageId, `❌ Lỗi khi hợp nhất mảnh và tải lên: ${error.message}`, env);
       } else {
-        await sendMessage(chatId, `❌ 合并分片并上传时出错: ${error.message}`, env);
+        await sendMessage(chatId, `❌ Lỗi khi hợp nhất mảnh và tải lên: ${error.message}`, env);
       }
       
-      // 更新状态为失败
+      // Cập nhật trạng thái thành thất bại
       chunkState.status = 'failed';
       await env.STATS_STORAGE.put(chunkStateKey, JSON.stringify(chunkState));
     }
   } catch (error) {
-    console.error('合并分片并上传时出错:', error);
-    await sendMessage(chatId, `❌ 合并分片并上传时出错: ${error.message}`, env);
+    console.error('Lỗi khi hợp nhất mảnh và tải lên:', error);
+    await sendMessage(chatId, `❌ Lỗi khi hợp nhất mảnh và tải lên: ${error.message}`, env);
   }
 }
 
-// 清理分片数据
+// Dọn dẹp dữ liệu mảnh
 async function cleanupChunkData(userId, chunkState, env) {
   try {
-    // 删除所有分片数据
+    // Xóa tất cả dữ liệu mảnh
     for (const chunkNum in chunkState.chunks) {
       const chunkKey = chunkState.chunks[chunkNum].key;
       await env.STATS_STORAGE.delete(chunkKey);
     }
     
-    // 删除会话状态
+    // Xóa trạng thái phiên
     const chunkStateKey = `chunk_state_${userId}`;
     await env.STATS_STORAGE.delete(chunkStateKey);
     
-    console.log(`已清理用户 ${userId} 的分片上传临时数据`);
+    console.log(`Đã dọn dẹp dữ liệu tạm thời tải lên phân đoạn của người dùng ${userId}`);
   } catch (error) {
-    console.error('清理分片数据时出错:', error);
+    console.error('Lỗi khi dọn dẹp dữ liệu mảnh:', error);
   }
 }
 
-// 根据文件名获取MIME类型
+// Lấy loại MIME dựa trên tên tệp
 function getMimeTypeFromFileName(fileName) {
   if (!fileName) return 'application/octet-stream';
   
   const ext = fileName.split('.').pop().toLowerCase();
   
-  // 图片类型
+  // Loại hình ảnh
   if (['jpg', 'jpeg'].includes(ext)) return 'image/jpeg';
   if (ext === 'png') return 'image/png';
   if (ext === 'gif') return 'image/gif';
   if (ext === 'webp') return 'image/webp';
   if (ext === 'svg') return 'image/svg+xml';
   
-  // 视频类型
+  // Loại video
   if (['mp4', 'm4v'].includes(ext)) return 'video/mp4';
   if (ext === 'webm') return 'video/webm';
   if (ext === 'avi') return 'video/x-msvideo';
@@ -3165,7 +3161,7 @@ function getMimeTypeFromFileName(fileName) {
   if (ext === 'wmv') return 'video/x-ms-wmv';
   if (ext === 'flv') return 'video/x-flv';
   
-  // 音频类型
+  // Loại âm thanh
   if (ext === 'mp3') return 'audio/mpeg';
   if (ext === 'wav') return 'audio/wav';
   if (ext === 'ogg') return 'audio/ogg';
@@ -3173,7 +3169,7 @@ function getMimeTypeFromFileName(fileName) {
   if (ext === 'aac') return 'audio/aac';
   if (ext === 'm4a') return 'audio/mp4';
   
-  // 文档类型
+  // Loại tài liệu
   if (ext === 'pdf') return 'application/pdf';
   if (['doc', 'docx'].includes(ext)) return 'application/msword';
   if (['xls', 'xlsx'].includes(ext)) return 'application/vnd.ms-excel';
@@ -3183,12 +3179,12 @@ function getMimeTypeFromFileName(fileName) {
   if (ext === 'css') return 'text/css';
   if (ext === 'js') return 'application/javascript';
   
-  // 压缩文件
+  // Tệp nén
   if (ext === 'zip') return 'application/zip';
   if (ext === 'rar') return 'application/x-rar-compressed';
   if (ext === '7z') return 'application/x-7z-compressed';
   if (['tar', 'gz', 'bz2'].includes(ext)) return 'application/x-compressed';
   
-  // 默认二进制类型
+  // Loại nhị phân mặc định
   return 'application/octet-stream';
 }
