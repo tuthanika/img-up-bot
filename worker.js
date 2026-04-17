@@ -2670,30 +2670,39 @@ function extractFileSizeFromMessage(msg) {
   return obj ? (obj.file_size || 0) : 0;
 }
 
-// ── Ghi metadata vào KV của CF-imgbed (theo đúng cấu trúc thực tế) ───────────────
+// ── Ghi metadata vào KV của CF-imgbed (theo đúng cấu trúc thực tế) ──────────────────
 // CF-imgbed lưu:
-//   1. Key = "{dir}/{timestamp}_{file}"  →  Value = "" (rỗng!)
-//   2. Key = "manage@index_0"           →  Value = JSON array có các entry {id, metadata}
+//   1. Key="{dir}/{ts}_{file}" Value="" (rỗng), KV-metadata={...}
+//      serve bằng: kv.getWithMetadata(key) => dùng metadata.TgFileId
+//   2. Key="manage@index_0"   Value=JSON array {id,metadata}[]
+//   3. Key="manage@index@meta" Value=JSON thống kê
 async function writeToImgBedKV(fullKey, metadata, env) {
-  // CF-imgbed format: file key value là chuỗi rỗng
-  // metadata được lưu trong manage@index_0 array
   const INDEX_KEY = 'manage@index_0';
+  const META_KEY  = 'manage@index@meta';
   const newEntry = { id: fullKey, metadata };
 
   // Method 1: IMGBED_KV binding trực tiếp (cùng CF account)
   if (env.IMGBED_KV) {
     try {
-      // Bước 1: Ghi key file với value rỗng
-      await env.IMGBED_KV.put(fullKey, '');
-      // Bước 2: Đọc và cập nhật manage@index_0
+      // Bước 1: Ghi key file, value="", KV-level metadata
+      // CF-imgbed serve bằng: kv.getWithMetadata(key) -> metadata.TgFileId -> stream
+      await env.IMGBED_KV.put(fullKey, '', { metadata });
+      // Bước 2: Cập nhật manage@index_0
       const existingRaw = await env.IMGBED_KV.get(INDEX_KEY);
       let indexArr = [];
       if (existingRaw) {
         try { indexArr = JSON.parse(existingRaw); } catch(e) { indexArr = []; }
         if (!Array.isArray(indexArr)) indexArr = [];
       }
-      indexArr.unshift(newEntry); // thêm vào đầu array (mới nhất trước)
+      indexArr.unshift(newEntry);
       await env.IMGBED_KV.put(INDEX_KEY, JSON.stringify(indexArr));
+      // Bước 3: Cập nhật manage@index@meta
+      try {
+        const metaRaw = await env.IMGBED_KV.get(META_KEY);
+        let m = {}; if (metaRaw) { try { m = JSON.parse(metaRaw); } catch(e) {} }
+        _applyIndexMetaUpdate(m, fullKey, metadata);
+        await env.IMGBED_KV.put(META_KEY, JSON.stringify(m));
+      } catch(e) { console.log('[CopyMode] index@meta non-fatal:', e.message); }
       console.log('[CopyMode] KV write via binding OK:', fullKey);
       return true;
     } catch(e) {
@@ -2707,45 +2716,58 @@ async function writeToImgBedKV(fullKey, metadata, env) {
   const cfKvNsId = await getCfKvNamespaceId(env);
   if (cfApiToken && cfAccountId && cfKvNsId) {
     const base = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/storage/kv/namespaces/${cfKvNsId}`;
-    const authHeader = { 'Authorization': `Bearer ${cfApiToken}` };
+    const authH = { 'Authorization': `Bearer ${cfApiToken}`, 'Content-Type': 'application/json' };
     try {
-      // Bước 1: Ghi key file với value rỗng
-      const putFileResp = await fetch(
-        `${base}/values/${encodeURIComponent(fullKey)}`,
-        { method: 'PUT', headers: { ...authHeader, 'Content-Type': 'text/plain' }, body: '' }
-      );
+      // Bước 1: Bulk API (hỗ trợ KV-level metadata)
+      const putFileResp = await fetch(`${base}/bulk`, {
+        method: 'PUT', headers: authH,
+        body: JSON.stringify([{ key: fullKey, value: '', base64: false, metadata }])
+      });
       const putFileResult = await putFileResp.json();
-      if (!putFileResult.success) {
-        throw new Error('PUT file key thất bại: ' + JSON.stringify(putFileResult.errors));
-      }
-      // Bước 2: Đọc manage@index_0
-      const getIdxResp = await fetch(
-        `${base}/values/${encodeURIComponent(INDEX_KEY)}`,
-        { headers: authHeader }
-      );
+      if (!putFileResult.success)
+        throw new Error('Bulk PUT: ' + JSON.stringify(putFileResult.errors));
+      // Bước 2: Cập nhật manage@index_0
+      const getIdxResp = await fetch(`${base}/values/${encodeURIComponent(INDEX_KEY)}`, { headers: { 'Authorization': `Bearer ${cfApiToken}` } });
       let indexArr = [];
       if (getIdxResp.ok) {
-        const idxText = await getIdxResp.text();
-        try { indexArr = JSON.parse(idxText); } catch(e) { indexArr = []; }
+        try { indexArr = JSON.parse(await getIdxResp.text()); } catch(e) { indexArr = []; }
         if (!Array.isArray(indexArr)) indexArr = [];
       }
       indexArr.unshift(newEntry);
-      // Bước 3: Ghi lại manage@index_0
-      const putIdxResp = await fetch(
-        `${base}/values/${encodeURIComponent(INDEX_KEY)}`,
-        { method: 'PUT', headers: { ...authHeader, 'Content-Type': 'application/json' }, body: JSON.stringify(indexArr) }
-      );
-      const putIdxResult = await putIdxResp.json();
-      if (putIdxResult.success) {
-        console.log('[CopyMode] KV write via CF API OK:', fullKey);
-        return true;
-      }
-      console.error('[CopyMode] CF API index write errors:', JSON.stringify(putIdxResult.errors));
+      const putIdxResult = await (await fetch(`${base}/values/${encodeURIComponent(INDEX_KEY)}`,
+        { method: 'PUT', headers: authH, body: JSON.stringify(indexArr) })).json();
+      if (!putIdxResult.success)
+        throw new Error('PUT index: ' + JSON.stringify(putIdxResult.errors));
+      // Bước 3: Cập nhật manage@index@meta
+      try {
+        const getMetaResp = await fetch(`${base}/values/${encodeURIComponent(META_KEY)}`, { headers: { 'Authorization': `Bearer ${cfApiToken}` } });
+        let m = {}; if (getMetaResp.ok) { try { m = JSON.parse(await getMetaResp.text()); } catch(e) {} }
+        _applyIndexMetaUpdate(m, fullKey, metadata);
+        await fetch(`${base}/values/${encodeURIComponent(META_KEY)}`,
+          { method: 'PUT', headers: authH, body: JSON.stringify(m) });
+      } catch(e) { console.log('[CopyMode] index@meta REST non-fatal:', e.message); }
+      console.log('[CopyMode] KV write via CF API OK:', fullKey);
+      return true;
     } catch(e) {
       console.error('[CopyMode] CF API KV write exception:', e.message);
     }
   }
   return false;
+}
+
+function _applyIndexMetaUpdate(m, fileKey, metadata) {
+  const ch = metadata.ChannelName || 'default';
+  const sizeMB = parseFloat(metadata.FileSize || 0);
+  m.totalCount  = (m.totalCount || 0) + 1;
+  m.totalSizeMB = parseFloat(((m.totalSizeMB || 0) + sizeMB).toFixed(2));
+  m.lastUpdated = Date.now();
+  m.lastOperationId = fileKey;
+  m.chunkCount  = m.chunkCount || 1;
+  m.chunkSize   = m.chunkSize  || 5000;
+  if (!m.channelStats) m.channelStats = {};
+  if (!m.channelStats[ch]) m.channelStats[ch] = { usedMB: 0, fileCount: 0 };
+  m.channelStats[ch].fileCount += 1;
+  m.channelStats[ch].usedMB = parseFloat((m.channelStats[ch].usedMB + sizeMB).toFixed(2));
 }
 
 // ── Auto-discover kênh CF-imgbed qua API (ưu tiên cache KV/env) ───────────
