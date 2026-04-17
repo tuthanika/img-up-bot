@@ -5,6 +5,43 @@ compatibility_date = "2025-04-16"
 [observability.logs]
 enabled = true
 
+# ─────────────────────────────────────────────────────────────────
+# KV Namespaces
+# ─────────────────────────────────────────────────────────────────
+
+# [BẮT BUỘC] KV lưu cấu hình bot và thống kê
+# Tạo KV: npx wrangler kv namespace create STATS_STORAGE
+# Lấy ID: CF Dashboard → Storage → KV → tên namespace → ID
 [[kv_namespaces]]
 binding = "STATS_STORAGE"
 id = "9b057d1575184114bf240fbb373573c3"
+
+# [TÙY CHỌN] Dành cho Copy Mode — cùng Cloudflare account với CF-imgbed
+# Nếu bot và CF-imgbed dùng CÙNG account CF, bind trực tiếp KV namespace của CF-imgbed:
+#   npx wrangler kv namespace list   ← liệt kê tất cả namespace
+# Sau đó điền id bên dưới và bỏ dấu # để bật:
+# [[kv_namespaces]]
+# binding = "IMGBED_KV"
+# id = "IMGBED_KV_NAMESPACE_ID_HERE"
+
+# ─────────────────────────────────────────────────────────────────
+# Biến môi trường (Worker Secrets — khuyến nghị dùng wrangler secret)
+# ─────────────────────────────────────────────────────────────────
+# Thêm secret qua CLI: npx wrangler secret put <TÊN_BIẾN>
+# Hoặc qua CF Dashboard → Workers → imgupbot → Settings → Variables
+#
+# Biến bắt buộc:
+#   BOT_TOKEN          — Token Telegram bot của bạn (từ @BotFather)
+#   IMG_BED_URL        — URL API upload của CF-imgbed (VD: https://anh1.example.com/upload)
+#   AUTH_CODE          — Mã xác thực CF-imgbed (nếu có)
+#   ADMIN_USER_ID      — Telegram User ID của admin bot
+#
+# Biến cho Copy Mode (thay thế lệnh /admin cf*):
+#   IMGBED_CF_BOT_TOKEN    — Token bot Telegram của CF-imgbed (trường TgBotToken trong backup)
+#   IMGBED_TG_CHAT_ID      — Chat ID kênh TG lưu file của CF-imgbed (trường TgChatId trong backup)
+#   IMGBED_CHANNEL_NAME    — Tên kênh CF-imgbed, VD: ATP_Img (trường ChannelName trong backup)
+#
+# Biến cho Copy Mode khác account CF (thay thế IMGBED_KV binding):
+#   IMGBED_CF_API_TOKEN    — Cloudflare API Token có quyền KV Storage Edit (account CF-imgbed)
+#   IMGBED_CF_ACCOUNT_ID   — Account ID của account Cloudflare chứa CF-imgbed
+#   IMGBED_KV_NAMESPACE_ID — KV Namespace ID của CF-imgbed

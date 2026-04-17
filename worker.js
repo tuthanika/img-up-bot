@@ -201,6 +201,198 @@ async function handleRequest(request, env) {
           return new Response('OK', { status: 200 });
         }
         
+        if (subCommand === 'copy') {
+          const val = targetId && targetId.toLowerCase();
+          if (val === 'on' || val === 'off') {
+            const newMode = val === 'on';
+            try {
+              await updateCopyMode(newMode, env);
+              const verify = await getCopyMode(env);
+              const verifyOk = verify === newMode;
+              const modeDesc = newMode
+                ? '⚡ Bot sẽ forward file sang kênh Telegram của CF-imgbed (không tải về Worker), ghi trực tiếp vào KV của CF-imgbed.\nCần cấu hình: /admin cfstatus để kiểm tra.\nFallback re-upload nếu thiếu cấu hình.'
+                : '📦 Bot sẽ tải file từ Telegram về rồi upload lại lên CF-imgbed như cũ.';
+              await sendMessage(chatId, `✅ Copy Mode đã ${newMode ? '⚡ BẬT' : '❌ TẮT'}\n🔍 Xác minh KV: ${verifyOk ? '✓ OK' : '⚠️ Không khớp, thử lại'}\n\n${modeDesc}`, env);
+            } catch(e) {
+              await sendMessage(chatId, `❌ Lỗi KV: ${e.message}`, env);
+            }
+          } else {
+            const currentMode = await getCopyMode(env);
+            await sendMessage(chatId, `⚡ Copy Mode hiện tại: ${currentMode ? '⚡ BẬT' : '❌ TẮT'}\n\n📖 Cách hoạt động:\n• Bot forward file vào kênh TG của CF-imgbed (dùng bot token CF-imgbed)\n• Lấy file_id mới từ kênh đó\n• Ghi metadata trực tiếp vào KV của CF-imgbed\n→ File không bao giờ đi qua RAM/băng thông Worker!\n\n/admin copy on   → Bật\n/admin copy off  → Tắt\n/admin cfstatus  → Kiểm tra cấu hình Copy Mode`, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cftoken') {
+          const tokenInput = text.split(' ').slice(2).join(' ').trim();
+          if (!tokenInput) {
+            const currentToken = await getImgBedAdminToken(env);
+            const masked = currentToken
+              ? `${currentToken.substring(0, 4)}${'*'.repeat(Math.max(0, currentToken.length - 8))}${currentToken.slice(-4)}`
+              : 'Chưa đặt';
+            await sendMessage(chatId, `🔑 CF-imgbed Admin Token: \`${masked}\`\n\nToken dùng cho /api/manage/* (Copy Mode nâng cao, xem danh sách file).\n\nĐặt: /admin cftoken <token>\nXóa: /admin cftoken clear`, env);
+            return new Response('OK', { status: 200 });
+          }
+          if (tokenInput.toLowerCase() === 'clear') {
+            try {
+              if (env.STATS_STORAGE) await env.STATS_STORAGE.delete('imgbed_admin_token');
+              await sendMessage(chatId, `✅ Đã xóa CF-imgbed Admin Token`, env);
+            } catch(e) {
+              await sendMessage(chatId, `❌ Lỗi: ${e.message}`, env);
+            }
+            return new Response('OK', { status: 200 });
+          }
+          try {
+            await updateImgBedAdminToken(tokenInput, env);
+            const masked = `${tokenInput.substring(0, 4)}${'*'.repeat(Math.max(0, tokenInput.length - 8))}${tokenInput.slice(-4)}`;
+            await sendMessage(chatId, `✅ Đã lưu CF-imgbed Admin Token: \`${masked}\``, env);
+          } catch(e) {
+            await sendMessage(chatId, `❌ Lỗi KV: ${e.message}`, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        // ── CF-imgbed Cross-Account Copy Mode Config ──────────────────────
+        // Mỗi lệnh đều kiểm tra env var trước, nếu không có thì đọc/ghi KV
+
+        if (subCommand === 'cfbottoken') {
+          const val = text.split(' ').slice(2).join(' ').trim();
+          if (!val) {
+            const cur = await getCfBotToken(env);
+            const masked = cur ? `${cur.substring(0, 6)}${'*'.repeat(Math.max(0, cur.length - 12))}${cur.slice(-6)}` : 'Chưa đặt';
+            await sendMessage(chatId, `🤖 CF-imgbed Bot Token: \`${masked}\`\n\nLà token của bot Telegram mà CF-imgbed đang dùng.\nTìm trong file backup CF-imgbed (trường TgBotToken).\n\nEnv var (ưu tiên cao hơn): IMGBED_CF_BOT_TOKEN\n\nĐặt: /admin cfbottoken <token>\nXóa: /admin cfbottoken clear`, env);
+          } else if (val.toLowerCase() === 'clear') {
+            if (env.STATS_STORAGE) await env.STATS_STORAGE.delete('imgbed_cf_bot_token');
+            await sendMessage(chatId, '✅ Đã xóa CF Bot Token', env);
+          } else {
+            await setKvConfig('imgbed_cf_bot_token', val, env);
+            const masked = `${val.substring(0, 6)}${'*'.repeat(Math.max(0, val.length - 12))}${val.slice(-6)}`;
+            await sendMessage(chatId, `✅ Đã lưu CF Bot Token: \`${masked}\``, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cfchatid') {
+          const val = text.split(' ').slice(2).join(' ').trim();
+          if (!val) {
+            const cur = await getCfChatId(env);
+            await sendMessage(chatId, `💬 CF-imgbed Chat ID: \`${cur || 'Chưa đặt'}\`\n\nLà chat_id kênh Telegram lưu file của CF-imgbed.\nTìm trong file backup CF-imgbed (trường TgChatId), ví dụ: -1001234567890.\n\nEnv var (ưu tiên cao hơn): IMGBED_TG_CHAT_ID\n\nĐặt: /admin cfchatid <id>\nXóa: /admin cfchatid clear`, env);
+          } else if (val.toLowerCase() === 'clear') {
+            if (env.STATS_STORAGE) await env.STATS_STORAGE.delete('imgbed_tg_chat_id');
+            await sendMessage(chatId, '✅ Đã xóa CF Chat ID', env);
+          } else {
+            await setKvConfig('imgbed_tg_chat_id', val, env);
+            await sendMessage(chatId, `✅ Đã lưu CF Chat ID: \`${val}\``, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cfchannel') {
+          const val = text.split(' ').slice(2).join(' ').trim();
+          if (!val) {
+            const cur = await getCfChannelName(env);
+            await sendMessage(chatId, `📺 CF-imgbed Channel Name: \`${cur || 'Chưa đặt'}\`\n\nTên hiển thị kênh trong metadata (ví dụ: ATP_Img).\nTham khảo trường ChannelName trong backup.\n\nEnv var: IMGBED_CHANNEL_NAME\n\nĐặt: /admin cfchannel <tên>`, env);
+          } else {
+            await setKvConfig('imgbed_channel_name', val, env);
+            await sendMessage(chatId, `✅ Đã lưu Channel Name: \`${val}\``, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cfapitoken') {
+          const val = text.split(' ').slice(2).join(' ').trim();
+          if (!val) {
+            const cur = await getCfApiToken(env);
+            const masked = cur ? `${cur.substring(0, 4)}${'*'.repeat(Math.max(0, cur.length - 8))}${cur.slice(-4)}` : 'Chưa đặt';
+            await sendMessage(chatId, `🔑 Cloudflare API Token: \`${masked}\`\n\nDùng để ghi KV của CF-imgbed từ account CF khác.\nTạo tại: CF Dashboard → My Profile → API Tokens → Create Token\nQuyền cần có: KV Storage (Edit) cho account CF-imgbed.\n\nEnv var (ưu tiên cao hơn): IMGBED_CF_API_TOKEN\n\nĐặt: /admin cfapitoken <token>\nXóa: /admin cfapitoken clear`, env);
+          } else if (val.toLowerCase() === 'clear') {
+            if (env.STATS_STORAGE) await env.STATS_STORAGE.delete('imgbed_cf_api_token');
+            await sendMessage(chatId, '✅ Đã xóa CF API Token', env);
+          } else {
+            await setKvConfig('imgbed_cf_api_token', val, env);
+            const masked = `${val.substring(0, 4)}${'*'.repeat(Math.max(0, val.length - 8))}${val.slice(-4)}`;
+            await sendMessage(chatId, `✅ Đã lưu CF API Token: \`${masked}\``, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cfaccid') {
+          const val = text.split(' ').slice(2).join(' ').trim();
+          if (!val) {
+            const cur = await getCfAccountId(env);
+            await sendMessage(chatId, `👤 Cloudflare Account ID: \`${cur || 'Chưa đặt'}\`\n\nAccount ID của account Cloudflare chứa CF-imgbed.\nTìm tại: CF Dashboard → bên phải trang chủ → Account ID.\n\nEnv var: IMGBED_CF_ACCOUNT_ID\n\nĐặt: /admin cfaccid <id>`, env);
+          } else {
+            await setKvConfig('imgbed_cf_account_id', val, env);
+            await sendMessage(chatId, `✅ Đã lưu CF Account ID: \`${val}\``, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cfkvid') {
+          const val = text.split(' ').slice(2).join(' ').trim();
+          if (!val) {
+            const cur = await getCfKvNamespaceId(env);
+            await sendMessage(chatId, `🗂️ CF-imgbed KV Namespace ID: \`${cur || 'Chưa đặt'}\`\n\nID của KV namespace nơi CF-imgbed lưu dữ liệu file.\nTìm tại: CF Dashboard (account CF-imgbed) → Storage → KV → tìm namespace của CF-imgbed.\n\nEnv var: IMGBED_KV_NAMESPACE_ID\n\nĐặt: /admin cfkvid <id>`, env);
+          } else {
+            await setKvConfig('imgbed_kv_namespace_id', val, env);
+            await sendMessage(chatId, `✅ Đã lưu KV Namespace ID: \`${val}\``, env);
+          }
+          return new Response('OK', { status: 200 });
+        }
+
+        if (subCommand === 'cfstatus') {
+          const [copyMode, adminToken, cfChatId, cfChannelName, cfApiToken, cfAccId, cfKvId] = await Promise.all([
+            getCopyMode(env), getImgBedAdminToken(env), getCfChatId(env), getCfChannelName(env),
+            getCfApiToken(env), getCfAccountId(env), getCfKvNamespaceId(env)
+          ]);
+          const hasDirectBinding = !!env.IMGBED_KV;
+          const hasApiMethod = !!(cfApiToken && cfAccId && cfKvId);
+          const hasAdminToken = !!adminToken;
+          const hasChatIdCache = !!cfChatId;
+
+          const maskStr = (s) => s ? `${s.substring(0, 4)}${'*'.repeat(Math.max(0, s.length - 8))}${s.slice(-4)} ✅` : '❌ Chưa đặt';
+          const showId = (s) => s ? `${s.substring(0, 8)}... ✅` : '❌ Chưa đặt';
+
+          let kvMethod = '';
+          if (hasDirectBinding) kvMethod = '✅ IMGBED_KV binding (cùng account) — nhanh nhất';
+          else if (hasApiMethod) kvMethod = '✅ Cloudflare REST API (khác account)';
+          else kvMethod = '❌ Chưa cấu hình';
+
+          let channelStatus = '';
+          if (hasChatIdCache) channelStatus = `${cfChatId} ✅${cfChannelName ? ' — ' + cfChannelName : ''}`;
+          else if (hasAdminToken) channelStatus = '🔍 Auto-discover lần đầu upload';
+          else channelStatus = '❌ Chưa có';
+
+          let status = `📊 *Trạng thái Copy Mode*\n\n`;
+          status += `Copy Mode: ${copyMode ? '⚡ BẬT — lỗi = báo ngay, không fallback' : '❌ TẮT — dùng re-upload thông thường'}\n\n`;
+          status += `*[Telegram Forward]*\n`;
+          status += `• Bot dùng: BOT_TOKEN của bot này (không cần cfbottoken)\n`;
+          status += `• Bot phải là admin kênh TG CF-imgbed ✏️\n`;
+          status += `• Kênh CF-imgbed: ${channelStatus}\n\n`;
+          status += `*[Channel Auto-Discovery]*\n`;
+          status += `• Admin Token (cftoken): ${maskStr(adminToken)}\n`;
+          if (hasAdminToken) status += `• → Tự lấy TgChatId + ChannelName qua API CF-imgbed\n`;
+          else status += `• → Cần: /admin cftoken <token> để bật auto-discover\n`;
+          if (hasChatIdCache) status += `• Override thủ công: cfchatid=${cfChatId}${cfChannelName ? ', cfchannel=' + cfChannelName : ''}\n`;
+          status += '\n';
+          status += `*[KV Write Method]*\n`;
+          status += `• Phương thức: ${kvMethod}\n`;
+          if (!hasDirectBinding) {
+            status += `• CF API Token: ${maskStr(cfApiToken)}\n`;
+            status += `• Account ID: ${showId(cfAccId)}\n`;
+            status += `• KV Namespace ID: ${showId(cfKvId)}\n`;
+          }
+          if (copyMode) {
+            const issues = [];
+            if (!hasAdminToken && !hasChatIdCache) issues.push('❌ Thiếu channel info: /admin cftoken <token>');
+            if (!hasDirectBinding && !hasApiMethod) issues.push('❌ Thiếu KV write:\n  Cùng account: thêm IMGBED_KV binding vào wrangler.toml\n  Khác account: /admin cfapitoken + /admin cfaccid + /admin cfkvid');
+            if (issues.length > 0) status += `\n⚠️ *Copy Mode BẬT nhưng chưa đủ cấu hình:*\n${issues.join('\n')}`;
+            else status += `\n✅ Cấu hình đầy đủ. Gửi file để thử!`;
+          }
+          await sendMessage(chatId, status, env);
+          return new Response('OK', { status: 200 });
+        }
+
         if (subCommand === 'ban' && targetId) {
           await banUser(targetId, username, env);
           await sendMessage(chatId, `✅ Đã hạn chế người dùng ${targetId} sử dụng bot`, env);
@@ -690,41 +882,106 @@ async function handleRequest(request, env) {
   }
 }
 
-// Xử lý tải lên hình ảnh, nhận đối tượng env
+/**
+ * Re-upload file lên CF-imgbed: tải binary từ Telegram về Worker rồi upload lại.
+ * Chỉ dùng khi Copy Mode TẮT. Không có logic copy mode ở đây.
+ */
+async function uploadToImgBed(telegramFileUrl, fileName, mimeType, uploadFolder, adminToken, IMG_BED_URL, AUTH_CODE) {
+  const uploadUrl = new URL(IMG_BED_URL);
+  uploadUrl.searchParams.append('returnFormat', 'full');
+  if (uploadFolder && uploadFolder !== '/') uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+  if (AUTH_CODE) uploadUrl.searchParams.append('authCode', AUTH_CODE);
+
+  const authHeaders = {};
+  if (adminToken) authHeaders['Authorization'] = `Bearer ${adminToken}`;
+  else if (AUTH_CODE) authHeaders['Authorization'] = `Bearer ${AUTH_CODE}`;
+
+  const tgResp = await fetch(telegramFileUrl);
+  if (!tgResp.ok) throw new Error(`Tải file từ Telegram thất bại: ${tgResp.status}`);
+  const buffer = await tgResp.arrayBuffer();
+  const fileSize = buffer.byteLength;
+
+  if (fileSize / (1024 * 1024) > 20) {
+    const err = new Error('FILE_TOO_LARGE');
+    err.fileSize = fileSize;
+    throw err;
+  }
+
+  const formData = new FormData();
+  formData.append('file', new File([buffer], fileName, { type: mimeType }));
+  if (uploadFolder && uploadFolder !== '/') formData.append('uploadFolder', uploadFolder);
+
+  console.log(`[ReUpload] ${fileName} (${formatFileSize(fileSize)}) → ${uploadUrl.toString()}`);
+  const uploadResp = await fetch(uploadUrl.toString(), { method: 'POST', headers: authHeaders, body: formData });
+  const responseText = await uploadResp.text();
+  console.log(`[ReUpload] Status: ${uploadResp.status}, response:`, responseText.substring(0, 200));
+
+  let uploadResult;
+  try { uploadResult = JSON.parse(responseText); } catch(e) { uploadResult = responseText; }
+  const extracted = extractUrlFromResult(uploadResult, IMG_BED_URL);
+  return {
+    url: extracted?.url || null,
+    fileName: extracted?.fileName || fileName,
+    fileSize: extracted?.fileSize || fileSize,
+    rawResponse: responseText
+  };
+}
+
+// Xử lý tải lên hình ảnh
 async function handlePhoto(message, chatId, env) {
   const photo = message.photo[message.photo.length - 1];
   const fileId = photo.file_id;
-  // Lấy mô tả ảnh của người dùng để làm ghi chú
   const photoDescription = message.caption || "";
 
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // Xây dựng URL API
 
-  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
   const sendResult = await sendMessage(chatId, '🔄 Đang xử lý hình ảnh của bạn, vui lòng đợi...', env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
-  const fileInfo = await getFile(fileId, env); // Truyền env
+  const fileInfo = await getFile(fileId, env);
+  if (!fileInfo || !fileInfo.ok) {
+    const errorMsg = '❌ Không thể lấy thông tin hình ảnh, vui lòng thử lại sau.';
+    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+    else await sendMessage(chatId, errorMsg, env);
+    return;
+  }
 
-  if (fileInfo && fileInfo.ok) {
-    const filePath = fileInfo.result.file_path;
-    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+  const filePath = fileInfo.result.file_path;
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+  const fileName = `image_${Date.now()}.jpg`;
+  const copyMode = await getCopyMode(env);
 
+  // ── COPY MODE BẬT: copy trực tiếp sang kênh CF-imgbed, không download về Worker ──
+  if (copyMode) {
+    try {
+      const result = await tryCopyMode(message.chat.id, message.message_id, fileName, 'image/jpeg', photoDescription, env);
+      let msgText = `✅ Tải ảnh lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
+      if (photoDescription) msgText += `📝 Ghi chú: ${photoDescription}\n`;
+      msgText += `📦 Dung lượng: ${formatFileSize(result.fileSize)}\n\n🔗 URL: ${result.url}`;
+      if (messageId) await editMessage(chatId, messageId, msgText, env);
+      else await sendMessage(chatId, msgText, env);
+      await updateUserStats(chatId, { fileType: 'image', fileSize: result.fileSize, success: true, fileName: result.fileName, url: result.url, description: photoDescription }, env);
+    } catch (err) {
+      const msg = `❌ Copy Mode thất bại: ${err.message}\n\n⚙️ Kiểm tra: /admin cfstatus`;
+      if (messageId) await editMessage(chatId, messageId, msg, env);
+      else await sendMessage(chatId, msg, env);
+      await updateUserStats(chatId, { fileType: 'image', fileSize: 0, success: false }, env);
+    }
+    return;
+  }
+
+  // ── RE-UPLOAD MODE: tải binary về Worker rồi upload lên CF-imgbed (logic gốc) ──
+  try {
     const imgResponse = await fetch(fileUrl);
     const imgBuffer = await imgResponse.arrayBuffer();
     const fileSize = imgBuffer.byteLength;
-    const fileName = `image_${Date.now()}.jpg`;
 
-    // Thêm kiểm tra kích thước
-    if (fileSize / (1024 * 1024) > 20) { // 20MB
-      const warningMsg = `⚠️ Hình ảnh quá lớn (${formatFileSize(fileSize)}), vượt quá giới hạn 20MB, không thể tải lên.`;
-      if (messageId) {
-        await editMessage(chatId, messageId, warningMsg, env);
-      } else {
-        await sendMessage(chatId, warningMsg, env);
-      }
+    if (fileSize / (1024 * 1024) > 20) {
+      const warningMsg = `⚠️ Hình ảnh quá lớn (${formatFileSize(fileSize)}), vượt quá giới hạn 20MB, không thể tải lên.\n\n💡 Cần tải lên file lớn? Hãy thử /chunk_upload`;
+      if (messageId) await editMessage(chatId, messageId, warningMsg, env);
+      else await sendMessage(chatId, warningMsg, env);
       return;
     }
 
@@ -733,253 +990,171 @@ async function handlePhoto(message, chatId, env) {
 
     const uploadUrl = new URL(IMG_BED_URL);
     uploadUrl.searchParams.append('returnFormat', 'full');
-    
+
     // Gắn thư mục tải lên nếu có cấu hình
     const uploadFolder = await getUploadFolder(env);
     if (uploadFolder && uploadFolder !== '/') {
       uploadUrl.searchParams.append('uploadFolder', uploadFolder);
-      formData.append('uploadFolder', uploadFolder); // API thường nhận folder từ body
+      formData.append('uploadFolder', uploadFolder);
     }
 
-    // Chuẩn bị header yêu cầu, đặt mã xác thực vào header thay vì tham số URL
     const headers = {};
-    if (AUTH_CODE) {
-      headers['Authorization'] = `Bearer ${AUTH_CODE}`;
-      // Đồng thời giữ phương thức xác thực qua tham số URL để đề phòng API yêu cầu
-      uploadUrl.searchParams.append('authCode', AUTH_CODE);
-    }
+    const adminToken = await getImgBedAdminToken(env);
+    if (adminToken) headers['Authorization'] = `Bearer ${adminToken}`;
+    else if (AUTH_CODE) headers['Authorization'] = `Bearer ${AUTH_CODE}`;
+    if (AUTH_CODE) uploadUrl.searchParams.append('authCode', AUTH_CODE);
 
     console.log(`URL yêu cầu tải ảnh lên: ${uploadUrl.toString()}`);
+    const uploadResponse = await fetch(uploadUrl, { method: 'POST', headers, body: formData });
+    const responseText = await uploadResponse.text();
+    console.log('Phản hồi gốc khi tải ảnh lên:', responseText);
 
-    try {
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: headers,
-        body: formData
-      });
+    let uploadResult;
+    try { uploadResult = JSON.parse(responseText); } catch(e) { uploadResult = responseText; }
 
-      console.log('Mã trạng thái tải ảnh lên:', uploadResponse.status);
-      
-      const responseText = await uploadResponse.text();
-      console.log('Phản hồi gốc khi tải ảnh lên:', responseText);
+    const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
+    const imgUrl = extractedResult.url;
+    const actualFileName = extractedResult.fileName || fileName;
+    const actualFileSize = extractedResult.fileSize || fileSize;
 
-      let uploadResult;
-      try {
-        uploadResult = JSON.parse(responseText);
-      } catch (e) {
-        console.error('Phân tích JSON phản hồi thất bại:', e);
-        uploadResult = responseText;
-      }
-
-      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL); // Truyền IMG_BED_URL làm cơ sở
-      const imgUrl = extractedResult.url;
-      // Sử dụng tên tệp đã trích xuất hoặc giá trị mặc định
-      const actualFileName = extractedResult.fileName || fileName;
-      // Sử dụng kích thước tệp đã tải lên, thay vì từ phản hồi (nếu có trong phản hồi, nó sẽ được trích xuất trong extractUrlFromResult)
-      const actualFileSize = extractedResult.fileSize || fileSize;
-
-      if (imgUrl) {
-        let msgText = `✅ Tải ảnh lên thành công!\n\n` +
-                     `📄 Tên tệp: ${actualFileName}\n`;
-        
-        // Nếu có mô tả ảnh, thêm thông tin ghi chú
-        if (photoDescription) {
-          msgText += `📝 Ghi chú: ${photoDescription}\n`;
-        }
-        
-        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
-                  `🔗 URL: ${imgUrl}`;
-        
-        // Cập nhật tin nhắn trước đó thay vì gửi tin nhắn mới
-        if (messageId) {
-          await editMessage(chatId, messageId, msgText, env);
-        } else {
-          await sendMessage(chatId, msgText, env);
-        }
-        
-        // Cập nhật thống kê người dùng, thêm trường ghi chú
-        await updateUserStats(chatId, {
-          fileType: 'image',
-          fileSize: actualFileSize,
-          success: true,
-          fileName: actualFileName,
-          url: imgUrl,
-          description: photoDescription
-        }, env);
-      } else {
-        const errorMsg = `❌ Không thể phân tích kết quả tải lên, phản hồi gốc:\n${responseText.substring(0, 200)}...`;
-        if (messageId) {
-          await editMessage(chatId, messageId, errorMsg, env);
-        } else {
-          await sendMessage(chatId, errorMsg, env);
-        }
-        
-        // Cập nhật thống kê thất bại
-        await updateUserStats(chatId, {
-          fileType: 'image',
-          fileSize: fileSize,
-          success: false
-        }, env);
-      }
-    } catch (error) {
-      console.error('Lỗi khi xử lý tải ảnh lên:', error);
-      const errorMsg = `❌ Lỗi khi xử lý tải ảnh lên: ${error.message}\n\nCó thể do ảnh quá lớn hoặc định dạng không được hỗ trợ.`;
-      if (messageId) {
-        await editMessage(chatId, messageId, errorMsg, env);
-      } else {
-        await sendMessage(chatId, errorMsg, env);
-      }
-    }
-  } else {
-    const errorMsg = '❌ Không thể lấy thông tin hình ảnh, vui lòng thử lại sau.';
-    if (messageId) {
-      await editMessage(chatId, messageId, errorMsg, env);
+    if (imgUrl) {
+      let msgText = `✅ Tải ảnh lên thành công!\n\n📄 Tên tệp: ${actualFileName}\n`;
+      // Nếu có mô tả ảnh, thêm thông tin ghi chú
+      if (photoDescription) msgText += `📝 Ghi chú: ${photoDescription}\n`;
+      msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n🔗 URL: ${imgUrl}`;
+      if (messageId) await editMessage(chatId, messageId, msgText, env);
+      else await sendMessage(chatId, msgText, env);
+      // Cập nhật thống kê người dùng, thêm trường ghi chú
+      await updateUserStats(chatId, { fileType: 'image', fileSize: actualFileSize, success: true, fileName: actualFileName, url: imgUrl, description: photoDescription }, env);
     } else {
-      await sendMessage(chatId, errorMsg, env);
+      const errorMsg = `❌ Không thể phân tích kết quả tải lên, phản hồi gốc:\n${responseText.substring(0, 200)}...`;
+      if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+      else await sendMessage(chatId, errorMsg, env);
+      await updateUserStats(chatId, { fileType: 'image', fileSize: fileSize, success: false }, env);
     }
+  } catch (error) {
+    console.error('Lỗi khi xử lý tải ảnh lên:', error);
+    const errorMsg = `❌ Lỗi khi xử lý tải ảnh lên: ${error.message}\n\nCó thể do ảnh quá lớn hoặc định dạng không được hỗ trợ.`;
+    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+    else await sendMessage(chatId, errorMsg, env);
   }
 }
 
-// Xử lý tải lên video, nhận đối tượng env
+// Xử lý tải lên video
 async function handleVideo(message, chatId, isDocument = false, env) {
   const fileId = isDocument ? message.document.file_id : message.video.file_id;
   const fileName = isDocument ? message.document.file_name : `video_${Date.now()}.mp4`;
   // Lấy mô tả video của người dùng để làm ghi chú
   const videoDescription = message.caption || "";
 
-  // Lấy cấu hình từ env
   const IMG_BED_URL = env.IMG_BED_URL;
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
-  const API_URL = `https://api.telegram.org/bot${BOT_TOKEN}`; // Xây dựng URL API
 
-  // Gửi tin nhắn đang xử lý và lấy ID tin nhắn để cập nhật sau
   const sendResult = await sendMessage(chatId, `🔄 Đang xử lý video "${fileName}" của bạn, vui lòng đợi...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
-  const fileInfo = await getFile(fileId, env); // Truyền env
-
-  if (fileInfo && fileInfo.ok) {
-    const filePath = fileInfo.result.file_path;
-    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-
-    try {
-      const videoResponse = await fetch(fileUrl);
-      if (!videoResponse.ok) throw new Error(`Lấy video thất bại: ${videoResponse.status}`);
-
-      const videoBuffer = await videoResponse.arrayBuffer();
-      const videoSize = videoBuffer.byteLength;
-      const fileSizeFormatted = formatFileSize(videoSize);
-      
-      if (videoSize / (1024 * 1024) > 20) { // 20MB
-        const warningMsg = `⚠️ Video quá lớn (${fileSizeFormatted}), vượt quá giới hạn 20MB, không thể tải lên.`;
-        if (messageId) {
-          await editMessage(chatId, messageId, warningMsg, env);
-        } else {
-          await sendMessage(chatId, warningMsg, env);
-        }
-        return;
-      }
-
-      const formData = new FormData();
-      const mimeType = isDocument ? message.document.mime_type || 'video/mp4' : 'video/mp4';
-      formData.append('file', new File([videoBuffer], fileName, { type: mimeType }));
-
-      const uploadUrl = new URL(IMG_BED_URL);
-      uploadUrl.searchParams.append('returnFormat', 'full');
-
-      // Gắn thư mục tải lên nếu có cấu hình
-      const uploadFolder = await getUploadFolder(env);
-      if (uploadFolder && uploadFolder !== '/') {
-        uploadUrl.searchParams.append('uploadFolder', uploadFolder);
-        formData.append('uploadFolder', uploadFolder);
-      }
-
-      if (AUTH_CODE) { // Kiểm tra AUTH_CODE lấy từ env
-        uploadUrl.searchParams.append('authCode', AUTH_CODE);
-      }
-
-      console.log(`URL yêu cầu tải video lên: ${uploadUrl.toString()}`);
-
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
-        headers: AUTH_CODE ? { 'Authorization': `Bearer ${AUTH_CODE}` } : {},
-        body: formData
-      });
-
-      const responseText = await uploadResponse.text();
-      console.log('Phản hồi gốc khi tải video lên:', responseText);
-
-      let uploadResult;
-      try {
-        uploadResult = JSON.parse(responseText);
-      } catch (e) {
-        uploadResult = responseText;
-      }
-
-      const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
-      const videoUrl = extractedResult.url;
-      const actualFileName = extractedResult.fileName || fileName;
-      const actualFileSize = extractedResult.fileSize || videoSize;
-
-      if (videoUrl) {
-        let msgText = `✅ Tải video lên thành công!\n\n` + 
-                     `📄 Tên tệp: ${actualFileName}\n`;
-        
-        // Nếu có mô tả video, thêm thông tin ghi chú
-        if (videoDescription) {
-          msgText += `📝 Ghi chú: ${videoDescription}\n`;
-        }
-        
-        msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n` +
-                  `🔗 URL: ${videoUrl}`;
-
-        if (messageId) {
-          await editMessage(chatId, messageId, msgText, env);
-        } else {
-          await sendMessage(chatId, msgText, env);
-        }
-        
-        // Cập nhật thống kê người dùng, thêm trường ghi chú
-        await updateUserStats(chatId, {
-          fileType: 'video',
-          fileSize: actualFileSize,
-          success: true,
-          fileName: actualFileName,
-          url: videoUrl,
-          description: videoDescription
-        }, env);
-      } else {
-        const errorMsg = `⚠️ Không thể lấy được liên kết video từ kho ảnh. Vui lòng thử lại sau.`;
-        if (messageId) {
-          await editMessage(chatId, messageId, errorMsg, env);
-        } else {
-          await sendMessage(chatId, errorMsg, env);
-        }
-        
-        // Cập nhật thống kê thất bại
-        await updateUserStats(chatId, {
-          fileType: 'video',
-          fileSize: videoSize,
-          success: false
-        }, env);
-      }
-    } catch (error) {
-      console.error('Lỗi khi xử lý video:', error);
-      const errorMsg = `❌ Lỗi khi xử lý video: ${error.message}`;
-      if (messageId) {
-        await editMessage(chatId, messageId, errorMsg, env);
-      } else {
-        await sendMessage(chatId, errorMsg, env);
-      }
-    }
-  } else {
+  const fileInfo = await getFile(fileId, env);
+  if (!fileInfo || !fileInfo.ok) {
     const errorMsg = '❌ Không thể lấy thông tin video, vui lòng thử lại sau.';
-    if (messageId) {
-      await editMessage(chatId, messageId, errorMsg, env);
-    } else {
-      await sendMessage(chatId, errorMsg, env);
+    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+    else await sendMessage(chatId, errorMsg, env);
+    return;
+  }
+
+  const filePath = fileInfo.result.file_path;
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+  const mimeType = isDocument ? message.document.mime_type || 'video/mp4' : 'video/mp4';
+  const copyMode = await getCopyMode(env);
+
+  // ── COPY MODE BẬT: copy trực tiếp sang kênh CF-imgbed, không download về Worker ──
+  if (copyMode) {
+    try {
+      const result = await tryCopyMode(message.chat.id, message.message_id, fileName, mimeType, videoDescription, env);
+      let msgText = `✅ Tải video lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
+      if (videoDescription) msgText += `📝 Ghi chú: ${videoDescription}\n`;
+      msgText += `📦 Dung lượng: ${formatFileSize(result.fileSize)}\n\n🔗 URL: ${result.url}`;
+      if (messageId) await editMessage(chatId, messageId, msgText, env);
+      else await sendMessage(chatId, msgText, env);
+      await updateUserStats(chatId, { fileType: 'video', fileSize: result.fileSize, success: true, fileName: result.fileName, url: result.url, description: videoDescription }, env);
+    } catch (err) {
+      const msg = `❌ Copy Mode thất bại: ${err.message}\n\n⚙️ Kiểm tra: /admin cfstatus`;
+      if (messageId) await editMessage(chatId, messageId, msg, env);
+      else await sendMessage(chatId, msg, env);
+      await updateUserStats(chatId, { fileType: 'video', fileSize: 0, success: false }, env);
     }
+    return;
+  }
+
+  // ── RE-UPLOAD MODE: tải binary về Worker rồi upload lên CF-imgbed (logic gốc) ──
+  try {
+    const videoResponse = await fetch(fileUrl);
+    if (!videoResponse.ok) throw new Error(`Lấy video thất bại: ${videoResponse.status}`);
+
+    const videoBuffer = await videoResponse.arrayBuffer();
+    const videoSize = videoBuffer.byteLength;
+    const fileSizeFormatted = formatFileSize(videoSize);
+
+    if (videoSize / (1024 * 1024) > 20) {
+      const warningMsg = `⚠️ Video quá lớn (${fileSizeFormatted}), vượt quá giới hạn 20MB, không thể tải lên.\n\n💡 Cần tải lên file lớn? Hãy thử /chunk_upload`;
+      if (messageId) await editMessage(chatId, messageId, warningMsg, env);
+      else await sendMessage(chatId, warningMsg, env);
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', new File([videoBuffer], fileName, { type: mimeType }));
+
+    const uploadUrl = new URL(IMG_BED_URL);
+    uploadUrl.searchParams.append('returnFormat', 'full');
+
+    // Gắn thư mục tải lên nếu có cấu hình
+    const uploadFolder = await getUploadFolder(env);
+    if (uploadFolder && uploadFolder !== '/') {
+      uploadUrl.searchParams.append('uploadFolder', uploadFolder);
+      formData.append('uploadFolder', uploadFolder);
+    }
+
+    if (AUTH_CODE) uploadUrl.searchParams.append('authCode', AUTH_CODE);
+
+    console.log(`URL yêu cầu tải video lên: ${uploadUrl.toString()}`);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: AUTH_CODE ? { 'Authorization': `Bearer ${AUTH_CODE}` } : {},
+      body: formData
+    });
+
+    const responseText = await uploadResponse.text();
+    console.log('Phản hồi gốc khi tải video lên:', responseText);
+
+    let uploadResult;
+    try { uploadResult = JSON.parse(responseText); } catch(e) { uploadResult = responseText; }
+
+    const extractedResult = extractUrlFromResult(uploadResult, IMG_BED_URL);
+    const videoUrl = extractedResult.url;
+    const actualFileName = extractedResult.fileName || fileName;
+    const actualFileSize = extractedResult.fileSize || videoSize;
+
+    if (videoUrl) {
+      let msgText = `✅ Tải video lên thành công!\n\n📄 Tên tệp: ${actualFileName}\n`;
+      // Nếu có mô tả video, thêm thông tin ghi chú
+      if (videoDescription) msgText += `📝 Ghi chú: ${videoDescription}\n`;
+      msgText += `📦 Dung lượng tệp: ${formatFileSize(actualFileSize)}\n\n🔗 URL: ${videoUrl}`;
+      if (messageId) await editMessage(chatId, messageId, msgText, env);
+      else await sendMessage(chatId, msgText, env);
+      // Cập nhật thống kê người dùng, thêm trường ghi chú
+      await updateUserStats(chatId, { fileType: 'video', fileSize: actualFileSize, success: true, fileName: actualFileName, url: videoUrl, description: videoDescription }, env);
+    } else {
+      const errorMsg = `⚠️ Không thể lấy được liên kết video từ kho ảnh. Vui lòng thử lại sau.`;
+      if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+      else await sendMessage(chatId, errorMsg, env);
+      await updateUserStats(chatId, { fileType: 'video', fileSize: videoSize, success: false }, env);
+    }
+  } catch (error) {
+    console.error('Lỗi khi xử lý video:', error);
+    const errorMsg = `❌ Lỗi khi xử lý video: ${error.message}`;
+    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+    else await sendMessage(chatId, errorMsg, env);
   }
 }
 
@@ -2441,6 +2616,286 @@ async function updateBotPublicMode(mode, env) {
     console.error('Lỗi khi cập nhật chế độ bot:', error);
     return false;
   }
+}
+
+// ── Utility chung cho config (env var ưu tiên, fallback KV) ──────────────
+async function getKvConfig(key, envVar, env) {
+  if (env[envVar]) return env[envVar];
+  try {
+    if (env.STATS_STORAGE) return await env.STATS_STORAGE.get(key);
+  } catch(e) { console.error(`getKvConfig(${key}):`, e.message); }
+  return null;
+}
+async function setKvConfig(key, value, env) {
+  if (!env.STATS_STORAGE) throw new Error('STATS_STORAGE chưa được bind');
+  await env.STATS_STORAGE.put(key, value);
+}
+
+// ── CF-imgbed Cross-Account Config helpers ────────────────────────────────
+async function getCfBotToken(env)       { return getKvConfig('imgbed_cf_bot_token',   'IMGBED_CF_BOT_TOKEN',   env); }
+async function getCfChatId(env)         { return getKvConfig('imgbed_tg_chat_id',     'IMGBED_TG_CHAT_ID',     env); }
+async function getCfChannelName(env)    { return getKvConfig('imgbed_channel_name',   'IMGBED_CHANNEL_NAME',   env); }
+async function getCfApiToken(env)       { return getKvConfig('imgbed_cf_api_token',   'IMGBED_CF_API_TOKEN',   env); }
+async function getCfAccountId(env)      { return getKvConfig('imgbed_cf_account_id', 'IMGBED_CF_ACCOUNT_ID', env); }
+async function getCfKvNamespaceId(env)  { return getKvConfig('imgbed_kv_namespace_id','IMGBED_KV_NAMESPACE_ID',env); }
+
+// ── Trích xuất file_id và file_size từ Telegram Message object ────────────
+function extractFileIdFromMessage(msg) {
+  if (msg.photo)      return msg.photo[msg.photo.length - 1].file_id;
+  if (msg.video)      return msg.video.file_id;
+  if (msg.animation)  return msg.animation.file_id;
+  if (msg.document)   return msg.document.file_id;
+  if (msg.audio)      return msg.audio.file_id;
+  if (msg.voice)      return msg.voice.file_id;
+  if (msg.video_note) return msg.video_note.file_id;
+  return null;
+}
+function extractFileSizeFromMessage(msg) {
+  const obj = msg.photo ? msg.photo[msg.photo.length - 1]
+             : (msg.video || msg.animation || msg.document || msg.audio || msg.voice || msg.video_note);
+  return obj ? (obj.file_size || 0) : 0;
+}
+
+// ── Ghi metadata vào KV của CF-imgbed ─────────────────────────────────────
+// Method 1 (ưu tiên): IMGBED_KV binding cùng CF account
+// Method 2 (fallback): Cloudflare KV REST API (khác account)
+async function writeToImgBedKV(key, metadata, env) {
+  const valueStr = JSON.stringify(metadata);
+
+  // Method 1: direct binding
+  if (env.IMGBED_KV) {
+    try {
+      await env.IMGBED_KV.put(key, valueStr);
+      console.log('[CopyMode] KV write via binding OK:', key);
+      return true;
+    } catch(e) {
+      console.error('[CopyMode] Binding write failed:', e.message);
+    }
+  }
+
+  // Method 2: Cloudflare KV REST API
+  const cfApiToken = await getCfApiToken(env);
+  const cfAccountId = await getCfAccountId(env);
+  const cfKvNsId = await getCfKvNamespaceId(env);
+  if (cfApiToken && cfAccountId && cfKvNsId) {
+    try {
+      const encodedKey = encodeURIComponent(key);
+      const resp = await fetch(
+        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/storage/kv/namespaces/${cfKvNsId}/values/${encodedKey}`,
+        { method: 'PUT', headers: { 'Authorization': `Bearer ${cfApiToken}`, 'Content-Type': 'application/json' }, body: valueStr }
+      );
+      const result = await resp.json();
+      if (result.success) {
+        console.log('[CopyMode] KV write via CF API OK:', key);
+        return true;
+      }
+      console.error('[CopyMode] CF API KV write errors:', JSON.stringify(result.errors));
+    } catch(e) {
+      console.error('[CopyMode] CF API KV write exception:', e.message);
+    }
+  }
+  return false;
+}
+
+// ── Auto-discover kênh CF-imgbed qua API (ưu tiên cache KV/env) ───────────
+async function getImgBedChannelInfo(env) {
+  // 1. Kiểm tra cache/override thủ công (env var > KV)
+  const manualChatId = await getCfChatId(env);
+  const manualName = await getCfChannelName(env);
+  if (manualChatId) {
+    console.log('[CopyMode] Dùng channel info từ cache/env:', manualChatId, manualName);
+    return { chatId: manualChatId, channelName: manualName || 'default' };
+  }
+
+  // 2. Tự động lấy từ CF-imgbed API (dùng admin token đã có)
+  const adminToken = await getImgBedAdminToken(env);
+  if (!adminToken) {
+    throw new Error(
+      'Không có thông tin kênh CF-imgbed.\n' +
+      '• Cách 1 (tự động): /admin cftoken <admin_token> — bot tự lấy kênh qua API.\n' +
+      '• Cách 2 (thủ công): /admin cfchatid <id> và /admin cfchannel <tên>'
+    );
+  }
+
+  try {
+    const baseUrl = new URL(env.IMG_BED_URL).origin;
+    // Thử các phương thức xác thực của CF-imgbed
+    const listUrl = `${baseUrl}/api/manage/list`;
+    const resp = await fetch(listUrl, {
+      headers: {
+        'Authorization': `Bearer ${adminToken}`,
+        'authCode': adminToken
+      }
+    });
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) {
+      console.error('[CopyMode] API response parse error:', text.substring(0, 100));
+      return null;
+    }
+
+    // Hỗ trợ nhiều cấu trúc response của các phiên bản CF-imgbed khác nhau
+    const rawFiles = data?.data?.files || data?.data?.list || data?.data || data?.files || data?.list || [];
+    const files = Array.isArray(rawFiles) ? rawFiles : Object.values(rawFiles);
+
+    for (const file of files) {
+      const meta = file?.metadata || file;
+      const chatId = meta?.TgChatId;
+      const channelName = meta?.ChannelName;
+      if (chatId && chatId !== '0' && chatId !== 'undefined') {
+        console.log('[CopyMode] Auto-discovered channel:', chatId, channelName);
+        // Cache lại để lần sau khỏi phải gọi API
+        try {
+          if (env.STATS_STORAGE) {
+            await env.STATS_STORAGE.put('imgbed_tg_chat_id', chatId);
+            if (channelName) await env.STATS_STORAGE.put('imgbed_channel_name', channelName);
+          }
+        } catch(e) {}
+        return { chatId, channelName: channelName || 'default' };
+      }
+    }
+    // Không tìm thấy file nào có TgChatId
+    throw new Error(
+      'CF-imgbed API không trả về thông tin kênh Telegram.\n' +
+      'Có thể chưa có file nào, hoặc CF-imgbed không dùng Telegram storage.\n' +
+      'Hãy set thủ công: /admin cfchatid <id> và /admin cfchannel <tên>'
+    );
+  } catch(e) {
+    if (e.message.includes('/admin cfchatid')) throw e; // re-throw user-facing errors
+    throw new Error(`Lỗi gọi CF-imgbed API: ${e.message}`);
+  }
+}
+
+// ── Core Copy Mode: forward → ghi KV ─────────────────────────────────────
+async function tryCopyMode(fromChatId, messageId, fileName, mimeType, description, env) {
+  // 1. Lấy kênh CF-imgbed (auto hoặc thủ công)
+  const channelInfo = await getImgBedChannelInfo(env);
+  const { chatId: cfChatId, channelName: cfChannelName } = channelInfo;
+  const BOT_TOKEN = env.BOT_TOKEN;
+
+  // 2. copyMessage: copy file vào kênh CF-imgbed (không có "forwarded from"), với caption = description
+  //    Bot upload đã là admin kênh CF-imgbed nên có quyền gửi vào kênh
+  console.log(`[CopyMode] copyMessage → chat ${cfChatId}, from ${fromChatId}, msg ${messageId}`);
+  const copyBody = { chat_id: cfChatId, from_chat_id: fromChatId, message_id: messageId };
+  if (description) copyBody.caption = description; // Gắn mô tả vào caption của message đã copy
+  const copyResp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/copyMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(copyBody)
+  });
+  const copyResult = await copyResp.json();
+  if (!copyResult.ok) {
+    throw new Error(
+      `copyMessage thất bại: ${copyResult.description || copyResult.error_code}\n` +
+      `💡 Đảm bảo bot này đã được thêm làm admin kênh TG ${cfChatId} của CF-imgbed.`
+    );
+  }
+  const copiedMsgId = copyResult.result.message_id;
+  console.log('[CopyMode] copyMessage OK. copiedMsgId:', copiedMsgId);
+
+  // 3. Forward nội bộ trong kênh để lấy file_id (copyMessage chỉ trả về message_id)
+  //    forward từ cf_channel → cf_channel (bot là admin nên có quyền)
+  const internalFwdResp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/forwardMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: cfChatId, from_chat_id: cfChatId, message_id: copiedMsgId })
+  });
+  const internalFwdResult = await internalFwdResp.json();
+  if (!internalFwdResult.ok) {
+    throw new Error(`Không thể lấy file_id từ kênh: ${internalFwdResult.description}`);
+  }
+  const newFileId = extractFileIdFromMessage(internalFwdResult.result);
+  const fileSize = extractFileSizeFromMessage(internalFwdResult.result);
+  if (!newFileId) throw new Error('Không tìm thấy file_id trong message được copy');
+  console.log('[CopyMode] Got TgFileId:', newFileId.substring(0, 30) + '...');
+
+  // 4. Xóa message forward nội bộ (chỉ dùng để lấy file_id, không cần giữ lại)
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: cfChatId, message_id: internalFwdResult.result.message_id })
+    });
+  } catch(e) {
+    console.log('[CopyMode] deleteMessage (non-fatal):', e.message);
+  }
+
+  // 5. Tạo metadata theo đúng schema CF-imgbed
+  const timestamp = Date.now();
+  const uploadFolder = await getUploadFolder(env);
+  const directory = (uploadFolder && uploadFolder !== '/') ? uploadFolder.replace(/^\//, '') : '';
+  const normalizedFileName = fileName.replace(/\s+/g, '_');
+  const kvKey = `${timestamp}_${normalizedFileName}`;
+
+  const metadata = {
+    FileName: fileName,
+    FileType: mimeType,
+    FileSize: (fileSize / (1024 * 1024)).toFixed(2),
+    FileSizeBytes: fileSize,
+    UploadIP: '0.0.0.0',
+    UploadAddress: '未知',
+    ListType: 'None',
+    TimeStamp: timestamp,
+    Label: 'None',
+    Directory: directory,
+    Tags: [],
+    Channel: 'TelegramNew',
+    ChannelName: cfChannelName,
+    TgFileId: newFileId,
+    TgChatId: String(cfChatId),
+    // BOT_TOKEN của bot upload — CF-imgbed dùng token này để getFile khi serve
+    // Hoạt động vì bot là admin kênh và có quyền truy cập file_id trong kênh đó
+    TgBotToken: BOT_TOKEN
+  };
+
+  // 6. Ghi vào KV của CF-imgbed
+  const writeOk = await writeToImgBedKV(kvKey, metadata, env);
+  if (!writeOk) {
+    throw new Error(
+      'Không thể ghi vào KV CF-imgbed.\n' +
+      'Kiểm tra: /admin cfstatus để xem cấu hình KV write.'
+    );
+  }
+
+  // 7. Trả về URL theo format CF-imgbed
+  const baseImgUrl = new URL(env.IMG_BED_URL).origin;
+  const fileUrl = `${baseImgUrl}/file/${kvKey}`;
+  return { url: fileUrl, fileName: normalizedFileName, fileSize, mode: 'copy' };
+}
+
+// Quản lý Copy Mode
+async function getCopyMode(env) {
+  try {
+    if (!env.STATS_STORAGE) return false;
+    const mode = await env.STATS_STORAGE.get('copy_mode');
+    return mode === 'true';
+  } catch (error) {
+    console.error('Lỗi khi lấy copy mode:', error);
+    return false;
+  }
+}
+
+async function updateCopyMode(mode, env) {
+  if (!env.STATS_STORAGE) throw new Error('STATS_STORAGE chưa được bind trong Cloudflare Dashboard');
+  await env.STATS_STORAGE.put('copy_mode', mode.toString());
+  console.log(`Đã lưu copy_mode = ${mode}`);
+}
+
+// Quản lý CF-imgbed Admin Token
+async function getImgBedAdminToken(env) {
+  try {
+    if (!env.STATS_STORAGE) return null;
+    return await env.STATS_STORAGE.get('imgbed_admin_token');
+  } catch (error) {
+    console.error('Lỗi khi lấy imgbed admin token:', error);
+    return null;
+  }
+}
+
+async function updateImgBedAdminToken(token, env) {
+  if (!env.STATS_STORAGE) throw new Error('STATS_STORAGE chưa được bind trong Cloudflare Dashboard');
+  await env.STATS_STORAGE.put('imgbed_admin_token', token);
+  console.log('Đã lưu imgbed_admin_token');
 }
 
 // Quản lý thư mục tải lên
