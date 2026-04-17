@@ -1067,6 +1067,7 @@ async function handleVideo(message, chatId, isDocument = false, env) {
     const copyFileName = isDocument
       ? (message.document.file_name || `video_${Date.now()}.mp4`)
       : `video_${Date.now()}.mp4`;
+    console.log(`[handleVideo] Copy mode bật. mimeType=${mimeType}, fileName=${copyFileName}`);
     try {
       const result = await tryCopyMode(message.chat.id, message.message_id, copyFileName, mimeType, videoDescription, env);
       let msgText = `✅ Tải video lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
@@ -1076,7 +1077,8 @@ async function handleVideo(message, chatId, isDocument = false, env) {
       else await sendMessage(chatId, msgText, env);
       await updateUserStats(chatId, { fileType: 'video', fileSize: result.fileSize, success: true, fileName: result.fileName, url: result.url, description: videoDescription }, env);
     } catch (err) {
-      const msg = `❌ Copy Mode thất bại: ${err.message}\n\n⚙️ Kiểm tra: /admin cfstatus`;
+      console.error('[handleVideo] Copy mode lỗi:', err.message);
+      const msg = `❌ Copy Mode thất bại:\n${err.message}\n\n⚙️ Kiểm tra /admin cfstatus`;
       if (messageId) await editMessage(chatId, messageId, msg, env);
       else await sendMessage(chatId, msg, env);
       await updateUserStats(chatId, { fileType: 'video', fileSize: 0, success: false }, env);
@@ -2730,8 +2732,8 @@ async function getImgBedChannelInfo(env) {
 
   try {
     const baseUrl = new URL(env.IMG_BED_URL).origin;
-    // Thử các phương thức xác thực của CF-imgbed
     const listUrl = `${baseUrl}/api/manage/list`;
+    console.log('[CopyMode] Gọi CF-imgbed API để lấy channel:', listUrl);
     const resp = await fetch(listUrl, {
       headers: {
         'Authorization': `Bearer ${adminToken}`,
@@ -2739,15 +2741,16 @@ async function getImgBedChannelInfo(env) {
       }
     });
     const text = await resp.text();
+    console.log('[CopyMode] CF-imgbed API status:', resp.status, '| response:', text.substring(0, 150));
     let data;
     try { data = JSON.parse(text); } catch(e) {
-      console.error('[CopyMode] API response parse error:', text.substring(0, 100));
-      return null;
+      throw new Error(`CF-imgbed API trả về không phải JSON: ${text.substring(0, 100)}`);
     }
 
     // Hỗ trợ nhiều cấu trúc response của các phiên bản CF-imgbed khác nhau
     const rawFiles = data?.data?.files || data?.data?.list || data?.data || data?.files || data?.list || [];
     const files = Array.isArray(rawFiles) ? rawFiles : Object.values(rawFiles);
+    console.log('[CopyMode] Số file tìm thấy từ API:', files.length);
 
     for (const file of files) {
       const meta = file?.metadata || file;
@@ -2772,7 +2775,7 @@ async function getImgBedChannelInfo(env) {
       'Hãy set thủ công: /admin cfchatid <id> và /admin cfchannel <tên>'
     );
   } catch(e) {
-    if (e.message.includes('/admin cfchatid')) throw e; // re-throw user-facing errors
+    if (e.message.includes('/admin cfchatid') || e.message.includes('/admin cftoken')) throw e;
     throw new Error(`Lỗi gọi CF-imgbed API: ${e.message}`);
   }
 }
