@@ -940,22 +940,12 @@ async function handlePhoto(message, chatId, env) {
   const sendResult = await sendMessage(chatId, '🔄 Đang xử lý hình ảnh của bạn, vui lòng đợi...', env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
-  const fileInfo = await getFile(fileId, env);
-  if (!fileInfo || !fileInfo.ok) {
-    const errorMsg = '❌ Không thể lấy thông tin hình ảnh, vui lòng thử lại sau.';
-    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
-    else await sendMessage(chatId, errorMsg, env);
-    return;
-  }
-
-  const filePath = fileInfo.result.file_path;
-  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-  const fileName = `image_${Date.now()}.jpg`;
   const copyMode = await getCopyMode(env);
 
-  // ── COPY MODE BẬT: copy trực tiếp sang kênh CF-imgbed, không download về Worker ──
+  // ── COPY MODE BẬT: copy trực tiếp sang kênh CF-imgbed, không cần getFile hay download ──
   if (copyMode) {
     try {
+      const fileName = `image_${Date.now()}.jpg`;
       const result = await tryCopyMode(message.chat.id, message.message_id, fileName, 'image/jpeg', photoDescription, env);
       let msgText = `✅ Tải ảnh lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
       if (photoDescription) msgText += `📝 Ghi chú: ${photoDescription}\n`;
@@ -972,7 +962,19 @@ async function handlePhoto(message, chatId, env) {
     return;
   }
 
-  // ── RE-UPLOAD MODE: tải binary về Worker rồi upload lên CF-imgbed (logic gốc) ──
+  // ── RE-UPLOAD MODE: cần getFile để download binary về Worker (logic gốc) ──
+  const fileInfo = await getFile(fileId, env);
+  if (!fileInfo || !fileInfo.ok) {
+    const errorMsg = '❌ Không thể lấy thông tin hình ảnh, vui lòng thử lại sau.';
+    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+    else await sendMessage(chatId, errorMsg, env);
+    return;
+  }
+
+  const filePath = fileInfo.result.file_path;
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+  const fileName = `image_${Date.now()}.jpg`;
+
   try {
     const imgResponse = await fetch(fileUrl);
     const imgBuffer = await imgResponse.arrayBuffer();
@@ -1043,7 +1045,7 @@ async function handlePhoto(message, chatId, env) {
 // Xử lý tải lên video
 async function handleVideo(message, chatId, isDocument = false, env) {
   const fileId = isDocument ? message.document.file_id : message.video.file_id;
-  const fileName = isDocument ? message.document.file_name : `video_${Date.now()}.mp4`;
+  const baseFileName = isDocument ? (message.document.file_name || `video_${Date.now()}.mp4`) : `video_${Date.now()}.mp4`;
   // Lấy mô tả video của người dùng để làm ghi chú
   const videoDescription = message.caption || "";
 
@@ -1051,26 +1053,22 @@ async function handleVideo(message, chatId, isDocument = false, env) {
   const BOT_TOKEN = env.BOT_TOKEN;
   const AUTH_CODE = env.AUTH_CODE;
 
-  const sendResult = await sendMessage(chatId, `🔄 Đang xử lý video "${fileName}" của bạn, vui lòng đợi...`, env);
+  const sendResult = await sendMessage(chatId, `🔄 Đang xử lý video "${baseFileName}" của bạn, vui lòng đợi...`, env);
   const messageId = sendResult && sendResult.ok ? sendResult.result.message_id : null;
 
-  const fileInfo = await getFile(fileId, env);
-  if (!fileInfo || !fileInfo.ok) {
-    const errorMsg = '❌ Không thể lấy thông tin video, vui lòng thử lại sau.';
-    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
-    else await sendMessage(chatId, errorMsg, env);
-    return;
-  }
-
-  const filePath = fileInfo.result.file_path;
-  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
-  const mimeType = isDocument ? message.document.mime_type || 'video/mp4' : 'video/mp4';
   const copyMode = await getCopyMode(env);
 
-  // ── COPY MODE BẬT: copy trực tiếp sang kênh CF-imgbed, không download về Worker ──
+  // ── COPY MODE BẬT: copy trực tiếp, không cần getFile hay download (hỗ trợ file >20MB) ──
   if (copyMode) {
+    // Lấy mimeType trực tiếp từ message (không cần gọi getFile API)
+    const mimeType = isDocument
+      ? (message.document.mime_type || 'video/mp4')
+      : (message.video?.mime_type || 'video/mp4');
+    const copyFileName = isDocument
+      ? (message.document.file_name || `video_${Date.now()}.mp4`)
+      : `video_${Date.now()}.mp4`;
     try {
-      const result = await tryCopyMode(message.chat.id, message.message_id, fileName, mimeType, videoDescription, env);
+      const result = await tryCopyMode(message.chat.id, message.message_id, copyFileName, mimeType, videoDescription, env);
       let msgText = `✅ Tải video lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
       if (videoDescription) msgText += `📝 Ghi chú: ${videoDescription}\n`;
       msgText += `📦 Dung lượng: ${formatFileSize(result.fileSize)}\n\n🔗 URL: ${result.url}`;
@@ -1086,7 +1084,20 @@ async function handleVideo(message, chatId, isDocument = false, env) {
     return;
   }
 
-  // ── RE-UPLOAD MODE: tải binary về Worker rồi upload lên CF-imgbed (logic gốc) ──
+  // ── RE-UPLOAD MODE: cần getFile để download binary về Worker (chỉ hỗ trợ file ≤20MB) ──
+  const fileInfo = await getFile(fileId, env);
+  if (!fileInfo || !fileInfo.ok) {
+    const errorMsg = `❌ Không thể lấy thông tin video.\n(File >20MB không thể upload theo cách này)\n\n💡 Dùng /chunk_upload cho file lớn.`;
+    if (messageId) await editMessage(chatId, messageId, errorMsg, env);
+    else await sendMessage(chatId, errorMsg, env);
+    return;
+  }
+
+  const filePath = fileInfo.result.file_path;
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+  const fileName = baseFileName;
+  const mimeType = isDocument ? message.document.mime_type || 'video/mp4' : 'video/mp4';
+
   try {
     const videoResponse = await fetch(fileUrl);
     if (!videoResponse.ok) throw new Error(`Lấy video thất bại: ${videoResponse.status}`);
