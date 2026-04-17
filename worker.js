@@ -947,9 +947,14 @@ async function handlePhoto(message, chatId, env) {
     try {
       const fileName = `image_${Date.now()}.jpg`;
       const result = await tryCopyMode(message.chat.id, message.message_id, fileName, 'image/jpeg', photoDescription, env);
+      const isLargeFile = result.fileSize > 20 * 1024 * 1024; // >20MB
       let msgText = `✅ Tải ảnh lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
       if (photoDescription) msgText += `📝 Ghi chú: ${photoDescription}\n`;
       msgText += `📦 Dung lượng: ${formatFileSize(result.fileSize)}\n\n🔗 URL: ${result.url}`;
+      if (isLargeFile) {
+        msgText += `\n\n⚠️ File lớn: link web có thể không truy cập được (giới hạn Telegram Bot API).`;
+        if (result.tgChannelLink) msgText += `\n📤 Xem trực tiếp: ${result.tgChannelLink}`;
+      }
       if (messageId) await editMessage(chatId, messageId, msgText, env);
       else await sendMessage(chatId, msgText, env);
       await updateUserStats(chatId, { fileType: 'image', fileSize: result.fileSize, success: true, fileName: result.fileName, url: result.url, description: photoDescription }, env);
@@ -1071,9 +1076,14 @@ async function handleVideo(message, chatId, isDocument = false, env) {
     console.log(`[handleVideo] Copy mode bật. mimeType=${mimeType}, fileName=${copyFileName}`);
     try {
       const result = await tryCopyMode(message.chat.id, message.message_id, copyFileName, mimeType, videoDescription, env);
+      const isLargeFile = result.fileSize > 20 * 1024 * 1024; // >20MB
       let msgText = `✅ Tải video lên thành công!\n⚡ Copy Mode (Telegram copy → KV trực tiếp)\n\n📄 Tên tệp: ${result.fileName}\n`;
       if (videoDescription) msgText += `📝 Ghi chú: ${videoDescription}\n`;
       msgText += `📦 Dung lượng: ${formatFileSize(result.fileSize)}\n\n🔗 URL: ${result.url}`;
+      if (isLargeFile) {
+        msgText += `\n\n⚠️ File >20MB: link web có thể không truy cập được (giới hạn Telegram Bot API).`;
+        if (result.tgChannelLink) msgText += `\n📤 Xem trực tiếp: ${result.tgChannelLink}`;
+      }
       if (messageId) await editMessage(chatId, messageId, msgText, env);
       else await sendMessage(chatId, msgText, env);
       await updateUserStats(chatId, { fileType: 'video', fileSize: result.fileSize, success: true, fileName: result.fileName, url: result.url, description: videoDescription }, env);
@@ -2965,7 +2975,10 @@ async function tryCopyMode(fromChatId, messageId, fileName, mimeType, descriptio
   // 7. Trả về URL theo format CF-imgbed (dùng fullKvKey có thư mục)
   const baseImgUrl = new URL(env.IMG_BED_URL).origin;
   const fileUrl = `${baseImgUrl}/file/${fullKvKey}`;
-  return { url: fileUrl, fileName: normalizedFileName, fileSize, mode: 'copy' };
+  // Channel numeric ID (bỏ prefix -100) để tạo link t.me/c/{id}/{msg_id}
+  const channelNumId = String(cfChatId).replace(/^-100/, '');
+  const tgChannelLink = `https://t.me/c/${channelNumId}/${copiedMsgId}`;
+  return { url: fileUrl, fileName: normalizedFileName, fileSize, mode: 'copy', tgChannelLink };
 }
 
 // Quản lý Copy Mode
