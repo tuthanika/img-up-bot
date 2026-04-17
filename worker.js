@@ -954,7 +954,8 @@ async function handlePhoto(message, chatId, env) {
       else await sendMessage(chatId, msgText, env);
       await updateUserStats(chatId, { fileType: 'image', fileSize: result.fileSize, success: true, fileName: result.fileName, url: result.url, description: photoDescription }, env);
     } catch (err) {
-      const msg = `❌ Copy Mode thất bại: ${err.message}\n\n⚙️ Kiểm tra: /admin cfstatus`;
+      console.error('[handlePhoto] Copy mode lỗi:', err.message);
+      const msg = `❌ Copy Mode thất bại:\n${err.message}\n\n⚙️ Kiểm tra /admin cfstatus`;
       if (messageId) await editMessage(chatId, messageId, msg, env);
       else await sendMessage(chatId, msg, env);
       await updateUserStats(chatId, { fileType: 'image', fileSize: 0, success: false }, env);
@@ -2712,27 +2713,29 @@ async function writeToImgBedKV(key, metadata, env) {
 
 // ── Auto-discover kênh CF-imgbed qua API (ưu tiên cache KV/env) ───────────
 async function getImgBedChannelInfo(env) {
-  // 1. Kiểm tra cache/override thủ công (env var > KV)
+  // 1. Kiểm tra cache/override thủ công (env var > KV) — ưu tiên nhất
   const manualChatId = await getCfChatId(env);
   const manualName = await getCfChannelName(env);
   if (manualChatId) {
-    console.log('[CopyMode] Dùng channel info từ cache/env:', manualChatId, manualName);
+    console.log('[CopyMode] Dùng channel info từ config:', manualChatId, manualName);
     return { chatId: manualChatId, channelName: manualName || 'default' };
   }
 
-  // 2. Tự động lấy từ CF-imgbed API (dùng admin token đã có)
+  // 2. Cần admin token để gọi API tự động
   const adminToken = await getImgBedAdminToken(env);
   if (!adminToken) {
     throw new Error(
-      'Không có thông tin kênh CF-imgbed.\n' +
-      '• Cách 1 (tự động): /admin cftoken <admin_token> — bot tự lấy kênh qua API.\n' +
-      '• Cách 2 (thủ công): /admin cfchatid <id> và /admin cfchannel <tên>'
+      'Chưa có thông tin kênh TG.\n' +
+      '• Set thủ công: /admin cfchatid <id_kênh>\n' +
+      '• Hoặc cấu hình auto: /admin cftoken <admin_token>'
     );
   }
 
+  const baseUrl = new URL(env.IMG_BED_URL).origin;
+
+  // 3. Thử endpoint /api/manage/list (với phân trang)
   try {
-    const baseUrl = new URL(env.IMG_BED_URL).origin;
-    const listUrl = `${baseUrl}/api/manage/list`;
+    const listUrl = `${baseUrl}/api/manage/list?page=1&limit=50`;
     console.log('[CopyMode] Gọi CF-imgbed API để lấy channel:', listUrl);
     const resp = await fetch(listUrl, {
       headers: {
@@ -2741,41 +2744,64 @@ async function getImgBedChannelInfo(env) {
       }
     });
     const text = await resp.text();
-    console.log('[CopyMode] CF-imgbed API status:', resp.status, '| response:', text.substring(0, 150));
+    console.log('[CopyMode] API status:', resp.status, '| response (500 chars):', text.substring(0, 500));
+
     let data;
     try { data = JSON.parse(text); } catch(e) {
-      throw new Error(`CF-imgbed API trả về không phải JSON: ${text.substring(0, 100)}`);
+      throw new Error(`API trả về không phải JSON (status ${resp.status})`);
     }
 
-    // Hỗ trợ nhiều cấu trúc response của các phiên bản CF-imgbed khác nhau
-    const rawFiles = data?.data?.files || data?.data?.list || data?.data || data?.files || data?.list || [];
-    const files = Array.isArray(rawFiles) ? rawFiles : Object.values(rawFiles);
+    // Hỗ trợ nhiều cấu trúc response: {data:{files:[]}}, {data:{list:[]}}, {data:[]}, {files:[]}, {list:[]}
+    const rawFiles = data?.data?.files ?? data?.data?.list ?? data?.data ?? data?.files ?? data?.list ?? [];
+    const files = Array.isArray(rawFiles) ? rawFiles : (rawFiles && typeof rawFiles === 'object' ? Object.values(rawFiles) : []);
     console.log('[CopyMode] Số file tìm thấy từ API:', files.length);
 
     for (const file of files) {
       const meta = file?.metadata || file;
       const chatId = meta?.TgChatId;
       const channelName = meta?.ChannelName;
-      if (chatId && chatId !== '0' && chatId !== 'undefined') {
+      if (chatId && chatId !== '0' && chatId !== 'undefined' && chatId !== '') {
         console.log('[CopyMode] Auto-discovered channel:', chatId, channelName);
         // Cache lại để lần sau khỏi phải gọi API
         try {
           if (env.STATS_STORAGE) {
-            await env.STATS_STORAGE.put('imgbed_tg_chat_id', chatId);
+            await env.STATS_STORAGE.put('imgbed_tg_chat_id', String(chatId));
             if (channelName) await env.STATS_STORAGE.put('imgbed_channel_name', channelName);
           }
-        } catch(e) {}
-        return { chatId, channelName: channelName || 'default' };
+        } catch(e) { console.log('[CopyMode] Cache write error (non-fatal):', e.message); }
+        return { chatId: String(chatId), channelName: channelName || 'default' };
       }
     }
-    // Không tìm thấy file nào có TgChatId
-    throw new Error(
-      'CF-imgbed API không trả về thông tin kênh Telegram.\n' +
-      'Có thể chưa có file nào, hoặc CF-imgbed không dùng Telegram storage.\n' +
-      'Hãy set thủ công: /admin cfchatid <id> và /admin cfchannel <tên>'
-    );
+
+    if (files.length === 0) {
+      // List rỗng: có thể auth sai hoặc chưa có file Telegram nào
+      // Kiểm tra xem response có dấu hiệu auth lỗi không
+      const lowerText = text.toLowerCase();
+      if (resp.status === 401 || resp.status === 403 || lowerText.includes('unauthorized') || lowerText.includes('forbidden')) {
+        throw new Error(
+          `CF-imgbed từ chối xác thực (status ${resp.status}).\n` +
+          'Kiểm tra lại token: /admin cftoken <token_mới>'
+        );
+      }
+      throw new Error(
+        'CF-imgbed chưa có file nào có TgChatId.\n' +
+        'Cần set thủ công:\n' +
+        '• /admin cfchatid <id_kênh_telegram>\n' +
+        '• /admin cfchannel <tên_kênh> (tùy chọn)\n\n' +
+        `Response API: ${text.substring(0, 200)}`
+      );
+    } else {
+      // Có file nhưng không có TgChatId (không phải Telegram channel)
+      throw new Error(
+        'Các file trong CF-imgbed không có TgChatId (không dùng Telegram channel).\n' +
+        'Hãy set thủ công:\n' +
+        '• /admin cfchatid <id_kênh_telegram>\n' +
+        '• /admin cfchannel <tên_kênh>'
+      );
+    }
   } catch(e) {
-    if (e.message.includes('/admin cfchatid') || e.message.includes('/admin cftoken')) throw e;
+    // Re-throw user-facing errors (có hướng dẫn cho user)
+    if (e.message.includes('/admin cf')) throw e;
     throw new Error(`Lỗi gọi CF-imgbed API: ${e.message}`);
   }
 }
