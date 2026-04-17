@@ -2670,40 +2670,77 @@ function extractFileSizeFromMessage(msg) {
   return obj ? (obj.file_size || 0) : 0;
 }
 
-// ── Ghi metadata vào KV của CF-imgbed ─────────────────────────────────────
-// Method 1 (ưu tiên): IMGBED_KV binding cùng CF account
-// Method 2 (fallback): Cloudflare KV REST API (khác account)
-async function writeToImgBedKV(key, metadata, env) {
-  const valueStr = JSON.stringify(metadata);
+// ── Ghi metadata vào KV của CF-imgbed (theo đúng cấu trúc thực tế) ───────────────
+// CF-imgbed lưu:
+//   1. Key = "{dir}/{timestamp}_{file}"  →  Value = "" (rỗng!)
+//   2. Key = "manage@index_0"           →  Value = JSON array có các entry {id, metadata}
+async function writeToImgBedKV(fullKey, metadata, env) {
+  // CF-imgbed format: file key value là chuỗi rỗng
+  // metadata được lưu trong manage@index_0 array
+  const INDEX_KEY = 'manage@index_0';
+  const newEntry = { id: fullKey, metadata };
 
-  // Method 1: direct binding
+  // Method 1: IMGBED_KV binding trực tiếp (cùng CF account)
   if (env.IMGBED_KV) {
     try {
-      await env.IMGBED_KV.put(key, valueStr);
-      console.log('[CopyMode] KV write via binding OK:', key);
+      // Bước 1: Ghi key file với value rỗng
+      await env.IMGBED_KV.put(fullKey, '');
+      // Bước 2: Đọc và cập nhật manage@index_0
+      const existingRaw = await env.IMGBED_KV.get(INDEX_KEY);
+      let indexArr = [];
+      if (existingRaw) {
+        try { indexArr = JSON.parse(existingRaw); } catch(e) { indexArr = []; }
+        if (!Array.isArray(indexArr)) indexArr = [];
+      }
+      indexArr.unshift(newEntry); // thêm vào đầu array (mới nhất trước)
+      await env.IMGBED_KV.put(INDEX_KEY, JSON.stringify(indexArr));
+      console.log('[CopyMode] KV write via binding OK:', fullKey);
       return true;
     } catch(e) {
       console.error('[CopyMode] Binding write failed:', e.message);
     }
   }
 
-  // Method 2: Cloudflare KV REST API
+  // Method 2: Cloudflare KV REST API (khác CF account)
   const cfApiToken = await getCfApiToken(env);
   const cfAccountId = await getCfAccountId(env);
   const cfKvNsId = await getCfKvNamespaceId(env);
   if (cfApiToken && cfAccountId && cfKvNsId) {
+    const base = `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/storage/kv/namespaces/${cfKvNsId}`;
+    const authHeader = { 'Authorization': `Bearer ${cfApiToken}` };
     try {
-      const encodedKey = encodeURIComponent(key);
-      const resp = await fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${cfAccountId}/storage/kv/namespaces/${cfKvNsId}/values/${encodedKey}`,
-        { method: 'PUT', headers: { 'Authorization': `Bearer ${cfApiToken}`, 'Content-Type': 'application/json' }, body: valueStr }
+      // Bước 1: Ghi key file với value rỗng
+      const putFileResp = await fetch(
+        `${base}/values/${encodeURIComponent(fullKey)}`,
+        { method: 'PUT', headers: { ...authHeader, 'Content-Type': 'text/plain' }, body: '' }
       );
-      const result = await resp.json();
-      if (result.success) {
-        console.log('[CopyMode] KV write via CF API OK:', key);
+      const putFileResult = await putFileResp.json();
+      if (!putFileResult.success) {
+        throw new Error('PUT file key thất bại: ' + JSON.stringify(putFileResult.errors));
+      }
+      // Bước 2: Đọc manage@index_0
+      const getIdxResp = await fetch(
+        `${base}/values/${encodeURIComponent(INDEX_KEY)}`,
+        { headers: authHeader }
+      );
+      let indexArr = [];
+      if (getIdxResp.ok) {
+        const idxText = await getIdxResp.text();
+        try { indexArr = JSON.parse(idxText); } catch(e) { indexArr = []; }
+        if (!Array.isArray(indexArr)) indexArr = [];
+      }
+      indexArr.unshift(newEntry);
+      // Bước 3: Ghi lại manage@index_0
+      const putIdxResp = await fetch(
+        `${base}/values/${encodeURIComponent(INDEX_KEY)}`,
+        { method: 'PUT', headers: { ...authHeader, 'Content-Type': 'application/json' }, body: JSON.stringify(indexArr) }
+      );
+      const putIdxResult = await putIdxResp.json();
+      if (putIdxResult.success) {
+        console.log('[CopyMode] KV write via CF API OK:', fullKey);
         return true;
       }
-      console.error('[CopyMode] CF API KV write errors:', JSON.stringify(result.errors));
+      console.error('[CopyMode] CF API index write errors:', JSON.stringify(putIdxResult.errors));
     } catch(e) {
       console.error('[CopyMode] CF API KV write exception:', e.message);
     }
@@ -2863,9 +2900,15 @@ async function tryCopyMode(fromChatId, messageId, fileName, mimeType, descriptio
   // 5. Tạo metadata theo đúng schema CF-imgbed
   const timestamp = Date.now();
   const uploadFolder = await getUploadFolder(env);
-  const directory = (uploadFolder && uploadFolder !== '/') ? uploadFolder.replace(/^\//, '') : '';
+  // Directory: có trailing slash, không có leading slash (ví dụ: "guest/")
+  let directory = '';
+  if (uploadFolder && uploadFolder !== '/') {
+    directory = uploadFolder.replace(/^\//, '').replace(/\/*$/, '') + '/';
+  }
   const normalizedFileName = fileName.replace(/\s+/g, '_');
-  const kvKey = `${timestamp}_${normalizedFileName}`;
+  const fileTimestamp = `${timestamp}_${normalizedFileName}`;
+  // Key đầy đủ bao gồm thư mục: "guest/1234567890_filename.mp4"
+  const fullKvKey = directory ? `${directory}${fileTimestamp}` : fileTimestamp;
 
   const metadata = {
     FileName: fileName,
@@ -2877,19 +2920,19 @@ async function tryCopyMode(fromChatId, messageId, fileName, mimeType, descriptio
     ListType: 'None',
     TimeStamp: timestamp,
     Label: 'None',
-    Directory: directory,
+    Directory: directory,  // ví dụ: "guest/" hoặc ""
     Tags: [],
     Channel: 'TelegramNew',
     ChannelName: cfChannelName,
     TgFileId: newFileId,
     TgChatId: String(cfChatId),
     // BOT_TOKEN của bot upload — CF-imgbed dùng token này để getFile khi serve
-    // Hoạt động vì bot là admin kênh và có quyền truy cập file_id trong kênh đó
     TgBotToken: BOT_TOKEN
   };
+  console.log('[CopyMode] KV key:', fullKvKey, '| directory:', directory);
 
-  // 6. Ghi vào KV của CF-imgbed
-  const writeOk = await writeToImgBedKV(kvKey, metadata, env);
+  // 6. Ghi vào KV của CF-imgbed (file key = rỗng, metadata vào manage@index_0)
+  const writeOk = await writeToImgBedKV(fullKvKey, metadata, env);
   if (!writeOk) {
     throw new Error(
       'Không thể ghi vào KV CF-imgbed.\n' +
@@ -2897,9 +2940,9 @@ async function tryCopyMode(fromChatId, messageId, fileName, mimeType, descriptio
     );
   }
 
-  // 7. Trả về URL theo format CF-imgbed
+  // 7. Trả về URL theo format CF-imgbed (dùng fullKvKey có thư mục)
   const baseImgUrl = new URL(env.IMG_BED_URL).origin;
-  const fileUrl = `${baseImgUrl}/file/${kvKey}`;
+  const fileUrl = `${baseImgUrl}/file/${fullKvKey}`;
   return { url: fileUrl, fileName: normalizedFileName, fileSize, mode: 'copy' };
 }
 
