@@ -4,3 +4,7 @@ compatibility_date = "2025-04-16"
 
 [observability.logs]
 enabled = true
+
+[[kv_namespaces]]
+binding = "STATS_STORAGE"
+id = "9b057d1575184114bf240fbb373573c3"
